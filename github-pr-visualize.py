@@ -581,22 +581,34 @@ def plot_reviewers_per_pr(df, output_file=None):
 
 def plot_pr_throughput_over_time(df, output_file=None):
     """시간에 따른 PR 처리량을 그립니다."""
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(14, 6))
     
     # PR이 병합되거나 닫힌 날짜 확인
     if 'merged_at' in df.columns:
         completed_df = df.dropna(subset=['merged_at']).copy()
-        completed_df['completion_date'] = pd.to_datetime(completed_df['merged_at']).dt.strftime('%Y-%m')
+        completed_df['completion_date'] = pd.to_datetime(completed_df['merged_at']).dt.strftime('%Y-%m-%d')
         
-        monthly_throughput = completed_df.groupby('completion_date').size()
+        daily_throughput = completed_df.groupby('completion_date').size()
         
-        # 그래프 작성
-        monthly_throughput.plot(kind='bar')
-        plt.title('월별 처리된 PR (병합됨)')
-        plt.xlabel('월')
+        # 날짜가 너무 많으면 가독성이 떨어질 수 있으므로 데이터 양에 따라 처리
+        if len(daily_throughput) > 60:  # 데이터가 많으면 일부 레이블만 표시
+            plt.figure(figsize=(16, 6))  # 더 넓은 그래프
+            ax = daily_throughput.plot(kind='bar')
+            # x축 레이블 간격 조정 (모든 레이블을 표시하지 않고 일부만 표시)
+            interval = max(1, len(daily_throughput) // 20)  # 최대 20개 레이블 표시
+            for idx, label in enumerate(ax.get_xticklabels()):
+                if idx % interval != 0:
+                    label.set_visible(False)
+        else:
+            # 데이터가 적으면 모든 레이블 표시
+            daily_throughput.plot(kind='bar')
+        
+        plt.title('일별 처리된 PR (병합됨)')
+        plt.xlabel('날짜')
         plt.ylabel('PR 수')
         plt.grid(True, alpha=0.3)
         plt.xticks(rotation=45)
+        plt.tight_layout()  # 레이블이 잘리지 않도록 레이아웃 조정
         
         if output_file:
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
