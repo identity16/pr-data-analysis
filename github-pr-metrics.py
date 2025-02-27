@@ -382,6 +382,8 @@ def main():
                         help="상태별 PR 필터링 (기본값: all)")
     parser.add_argument("--max-prs", type=int, help="처리할 최대 PR 수")
     parser.add_argument("--output", default="pr_metrics.csv", help="출력 파일 경로 (기본값: pr_metrics.csv)")
+    parser.add_argument("--start-date", help="시작 날짜 (YYYY-MM-DD 형식)")
+    parser.add_argument("--end-date", help="종료 날짜 (YYYY-MM-DD 형식)")
     
     args = parser.parse_args()
     
@@ -397,13 +399,50 @@ def main():
     if args.max_prs and len(pull_requests) > args.max_prs:
         pull_requests = pull_requests[:args.max_prs]
     
-    print(f"{len(pull_requests)}개의 Pull Request를 가져왔습니다.")
+    print(f"총 {len(pull_requests)}개의 Pull Request를 가져왔습니다.")
+    
+    # 날짜 필터링
+    if args.start_date or args.end_date:
+        filtered_prs = []
+        start_date = None
+        end_date = None
+        
+        if args.start_date:
+            start_date = datetime.datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
+        if args.end_date:
+            end_date = datetime.datetime.strptime(args.end_date, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
+            # 종료일은 해당 일의 끝(23:59:59)까지 포함
+            end_date = end_date.replace(hour=23, minute=59, second=59)
+        
+        for pr in pull_requests:
+            pr_date = datetime.datetime.strptime(pr['created_at'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+            
+            if start_date and pr_date < start_date:
+                continue
+            if end_date and pr_date > end_date:
+                continue
+            
+            filtered_prs.append(pr)
+        
+        pull_requests = filtered_prs
+        
+        # 필터링 결과 출력
+        date_range_str = ""
+        if args.start_date and args.end_date:
+            date_range_str = f"{args.start_date}부터 {args.end_date}까지"
+        elif args.start_date:
+            date_range_str = f"{args.start_date}부터"
+        elif args.end_date:
+            date_range_str = f"{args.end_date}까지"
+        
+        print(f"{date_range_str}의 기간 동안 {len(pull_requests)}개의 Pull Request를 필터링했습니다.")
     
     if not pull_requests:
         print("Pull Request를 찾을 수 없습니다. 종료합니다.")
         return
     
     # 메트릭 계산
+    print("PR 메트릭 계산 중...")
     metrics_df = calculate_pr_metrics(args.owner, args.repo, pull_requests)
     
     # 파일로 저장
