@@ -759,6 +759,225 @@ def plot_pr_lifecycle_stages(df, output_file=None):
     else:
         plt.show()
 
+def calculate_advanced_complexity(df):
+    """
+    고급 PR 복잡도 지표를 계산합니다.
+    
+    다음 요소를 고려합니다:
+    - 기본 지표: 파일 수, 코드 라인, 리뷰 반복, 코멘트 수
+    - 고급 지표: 파일 유형별 가중치, 리뷰 코멘트 깊이, 변경 분산도
+    
+    Returns:
+        복잡도 점수가 추가된 DataFrame
+    """
+    # 유효한 데이터만 사용
+    df_valid = df.copy()
+    
+    # 1. 기본 지표 정규화 (0-1 범위로)
+    # 정규화된 파일 변경 수 (값이 클수록 많은 파일이 변경됨)
+    df_valid['normalized_changed_files'] = df_valid['changed_files'] / df_valid['changed_files'].max() if df_valid['changed_files'].max() > 0 else 0
+    
+    # 정규화된 코드 라인 변경 수 (값이 클수록 많은 라인이 변경됨)
+    df_valid['normalized_code_lines'] = (df_valid['additions'] + df_valid['deletions']) / (df_valid['additions'] + df_valid['deletions']).max() if (df_valid['additions'] + df_valid['deletions']).max() > 0 else 0
+    
+    # 정규화된 리뷰 반복 횟수 (값이 클수록 리뷰가 여러 번 반복됨)
+    df_valid['normalized_review_iterations'] = df_valid['review_iterations'] / df_valid['review_iterations'].max() if df_valid['review_iterations'].max() > 0 else 0
+    
+    # 정규화된 리뷰 코멘트 수 (값이 클수록 많은 코멘트가 달림)
+    df_valid['normalized_review_comments'] = df_valid['comments_reviews'] / df_valid['comments_reviews'].max() if df_valid['comments_reviews'].max() > 0 else 0
+    
+    # 2. 고급 지표 계산
+    
+    # 2.1 변경 분산도 (파일 수 대비 라인 수 비율의 분산)
+    # 파일당 평균 변경 라인 수 계산 (값이 높을수록 변경이 소수 파일에 집중됨)
+    df_valid['lines_per_file'] = df_valid.apply(
+        lambda row: (row['additions'] + row['deletions']) / row['changed_files'] 
+        if row['changed_files'] > 0 else 0, axis=1
+    )
+    max_lines_per_file = df_valid['lines_per_file'].max()
+    
+    # 변경 분산도 (값이 높을수록 변경이 여러 파일에 고르게 분산됨)
+    df_valid['normalized_change_dispersion'] = 1 - (df_valid['lines_per_file'] / max_lines_per_file) if max_lines_per_file > 0 else 0
+    
+    # 2.2 리뷰 깊이 (코멘트 수 대비 리뷰 수의 비율)
+    # 리뷰당 코멘트 수 계산 (값이 높을수록 리뷰당 코멘트가 많음)
+    df_valid['comments_per_review'] = df_valid.apply(
+        lambda row: row['comment_count'] / row['review_count'] 
+        if row['review_count'] > 0 else 0, axis=1
+    )
+    max_comments_per_review = df_valid['comments_per_review'].max()
+    
+    # 정규화된 리뷰 깊이 (값이 높을수록 리뷰 논의가 깊음)
+    df_valid['normalized_review_depth'] = df_valid['comments_per_review'] / max_comments_per_review if max_comments_per_review > 0 else 0
+    
+    # 2.3 PR 크기와 리뷰 반복 횟수의 조합 지표
+    # 큰 PR이 여러 번 반복되면 더 복잡 (값이 높을수록 큰 PR이 여러 번 반복됨)
+    df_valid['size_iteration_complexity'] = df_valid['normalized_code_lines'] * df_valid['normalized_review_iterations']
+    
+    # 3. 복합 복잡도 지표 계산 (가중치 적용)
+    df_valid['complexity_score'] = (
+        0.25 * df_valid['normalized_changed_files'] +      # 파일 수 (25%)
+        0.25 * df_valid['normalized_code_lines'] +         # 코드 라인 수 (25%)
+        0.15 * df_valid['normalized_review_iterations'] +  # 리뷰 반복 횟수 (15%)
+        0.15 * df_valid['normalized_review_comments'] +    # 코멘트 수 (15%)
+        0.10 * df_valid['normalized_change_dispersion'] +  # 변경 분산도 (10%)
+        0.05 * df_valid['normalized_review_depth'] +       # 리뷰 깊이 (5%)
+        0.05 * df_valid['size_iteration_complexity']       # 크기-반복 조합 (5%)
+    )
+    
+    # 복잡도 점수를 0-100 범위로 변환
+    df_valid['complexity_score'] = df_valid['complexity_score'] * 100
+    
+    # 복잡도 범주 정의
+    bins = [0, 20, 40, 60, 80, 100]
+    labels = ['매우 낮음', '낮음', '중간', '높음', '매우 높음']
+    df_valid['complexity_category'] = pd.cut(df_valid['complexity_score'], bins=bins, labels=labels)
+    
+    return df_valid
+
+def plot_pr_complexity_metrics(df, output_file=None):
+    """
+    PR 복잡도 지표를 시각화합니다.
+    
+    복잡도 지표는 다음 요소를 종합적으로 고려합니다:
+    - 변경된 파일 수
+    - 코드 라인 수 (추가 + 삭제)
+    - 리뷰 반복 횟수
+    - 코멘트 수
+    - 변경 분산도
+    - 리뷰 깊이
+    - 크기-반복 조합 지표
+    
+    Args:
+        df: PR 데이터가 포함된 DataFrame
+        output_file: 출력 파일 경로 (None인 경우 화면에 표시)
+    """
+    # 유효한 데이터만 사용
+    df_valid = df[df['is_merged'] == True].copy()
+    
+    if len(df_valid) < 5:
+        print("경고: 병합된 PR 데이터가 충분하지 않아 복잡도 지표 차트를 생성할 수 없습니다.")
+        return
+    
+    # 고급 복잡도 지표 계산
+    df_valid = calculate_advanced_complexity(df_valid)
+    
+    # 그림 설정
+    plt.figure(figsize=(16, 12))
+    set_korean_font()
+    
+    # 1. 복잡도 점수 히스토그램
+    plt.subplot(2, 3, 1)
+    sns.histplot(df_valid['complexity_score'], bins=20, kde=True)
+    plt.title('PR 복잡도 점수 분포')
+    plt.xlabel('복잡도 점수')
+    plt.ylabel('PR 수')
+    
+    # 2. 복잡도 범주별 PR 수
+    plt.subplot(2, 3, 2)
+    category_counts = df_valid['complexity_category'].value_counts().sort_index()
+    sns.barplot(x=category_counts.index, y=category_counts.values)
+    plt.title('복잡도 범주별 PR 수')
+    plt.xlabel('복잡도 범주')
+    plt.ylabel('PR 수')
+    plt.xticks(rotation=45)
+    
+    # 3. 복잡도 vs 리뷰 시간 산점도
+    plt.subplot(2, 3, 3)
+    sns.scatterplot(x='complexity_score', y='pr_duration_hours', data=df_valid)
+    plt.title('PR 복잡도와 처리 시간의 관계')
+    plt.xlabel('복잡도 점수')
+    plt.ylabel('PR 처리 시간 (시간)')
+    
+    # 추세선 추가
+    if len(df_valid) > 1:
+        z = np.polyfit(df_valid['complexity_score'], df_valid['pr_duration_hours'], 1)
+        p = np.poly1d(z)
+        plt.plot(df_valid['complexity_score'], p(df_valid['complexity_score']), "r--", alpha=0.8)
+    
+    # 4. 복잡도 구성 요소 기여도 (상위 15개 PR)
+    plt.subplot(2, 3, 4)
+    top_complex_prs = df_valid.nlargest(min(15, len(df_valid)), 'complexity_score')
+    
+    # 각 요소별 기여도 계산
+    components = pd.DataFrame({
+        'PR': top_complex_prs['pr_number'],
+        '파일 수': 0.25 * top_complex_prs['normalized_changed_files'] * 100,
+        '코드 라인': 0.25 * top_complex_prs['normalized_code_lines'] * 100,
+        '리뷰 반복': 0.15 * top_complex_prs['normalized_review_iterations'] * 100,
+        '코멘트 수': 0.15 * top_complex_prs['normalized_review_comments'] * 100,
+        '변경 분산도': 0.10 * top_complex_prs['normalized_change_dispersion'] * 100,
+        '리뷰 깊이': 0.05 * top_complex_prs['normalized_review_depth'] * 100,
+        '크기-반복': 0.05 * top_complex_prs['size_iteration_complexity'] * 100
+    })
+    
+    # 스택 바 차트로 표시
+    components_stacked = components.set_index('PR')
+    components_stacked.plot(kind='bar', stacked=True, ax=plt.gca())
+    plt.title('복잡도 상위 PR의 구성 요소 기여도')
+    plt.xlabel('PR 번호')
+    plt.ylabel('기여도 점수')
+    plt.xticks(rotation=90)
+    plt.legend(title='구성 요소', loc='upper left', bbox_to_anchor=(1, 1))
+    
+    # 5. 복잡도 요소 간 상관관계 히트맵
+    plt.subplot(2, 3, 5)
+    complexity_features = [
+        'normalized_changed_files', 'normalized_code_lines', 
+        'normalized_review_iterations', 'normalized_review_comments',
+        'normalized_change_dispersion', 'normalized_review_depth', 
+        'size_iteration_complexity'
+    ]
+    
+    # 상관관계 계산을 위한 열 이름 매핑 (히트맵에 표시할 간결한 이름)
+    feature_names = {
+        'normalized_changed_files': '파일 수',
+        'normalized_code_lines': '코드 라인',
+        'normalized_review_iterations': '리뷰 반복',
+        'normalized_review_comments': '코멘트 수',
+        'normalized_change_dispersion': '변경 분산도',
+        'normalized_review_depth': '리뷰 깊이',
+        'size_iteration_complexity': '크기-반복'
+    }
+    
+    correlation = df_valid[complexity_features].corr()
+    
+    # 상관관계 히트맵에 표시할 열 이름 변경
+    correlation.index = [feature_names[col] for col in correlation.index]
+    correlation.columns = [feature_names[col] for col in correlation.columns]
+    
+    # 상관관계 히트맵
+    sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+    plt.title('복잡도 요소 간 상관관계')
+    
+    # 6. 복잡도 요소별 중요도 (가중치)
+    plt.subplot(2, 3, 6)
+    weights = {
+        '파일 수': 25,
+        '코드 라인': 25,
+        '리뷰 반복': 15,
+        '코멘트 수': 15,
+        '변경 분산도': 10,
+        '리뷰 깊이': 5,
+        '크기-반복': 5
+    }
+    
+    # 가중치 막대 그래프
+    plt.bar(weights.keys(), weights.values())
+    plt.title('복잡도 요소별 가중치')
+    plt.xlabel('복잡도 요소')
+    plt.ylabel('가중치 (%)')
+    plt.xticks(rotation=45)
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
 def main():
     parser = argparse.ArgumentParser(description='GitHub PR 데이터 시각화')
     parser.add_argument('input_file', help='PR 지표가 포함된 CSV 파일')
@@ -828,6 +1047,10 @@ def main():
     # 새로 추가된 PR 수명 주기 단계별 소요 시간 분석 차트
     plot_pr_lifecycle_stages(df,
         None if args.show else os.path.join(args.output_dir, f"pr_lifecycle_stages{date_suffix}.png"))
+    
+    # 새로 추가된 PR 복잡도 지표 차트
+    plot_pr_complexity_metrics(df,
+        None if args.show else os.path.join(args.output_dir, f"pr_complexity_metrics{date_suffix}.png"))
     
     if not args.show:
         print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")
