@@ -12,7 +12,7 @@ from dateutil.parser import parse
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # 환경 변수에서 토큰 가져오기
 
-def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None):
+def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None, since=None, until=None, created_since=None):
     """
     GitHub 저장소에서 Pull Request 데이터를 가져옵니다.
     
@@ -22,10 +22,19 @@ def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None):
     - state: PR 상태 ('open', 'closed', 또는 'all')
     - per_page: 페이지당 PR 수
     - max_pages: 가져올 최대 페이지 수 (None은 모든 페이지)
+    - since: 이 날짜 이후에 업데이트된 PR만 가져옵니다 (ISO 8601 형식: YYYY-MM-DD)
+      참고: GitHub API의 since는 PR 생성 날짜가 아닌 업데이트 날짜를 기준으로 합니다.
+    - until: 이 날짜 이전에 생성된 PR만 가져옵니다 (ISO 8601 형식: YYYY-MM-DD)
+    - created_since: 이 날짜 이후에 생성된 PR만 가져옵니다 (ISO 8601 형식: YYYY-MM-DD)
+      참고: 이 필터링은 API 호출 후 클라이언트 측에서 수행됩니다.
     
     반환값:
     - Pull Request 데이터 목록
     """
+    print(f"\n[로그] PR 가져오기 시작: {owner}/{repo}")
+    print(f"[로그] 매개변수: state={state}, per_page={per_page}, max_pages={max_pages}")
+    print(f"[로그] 날짜 필터: since={since}, until={until}, created_since={created_since}")
+    
     pull_requests = []
     page = 1
     
@@ -34,7 +43,41 @@ def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None):
     }
     
     if GITHUB_TOKEN:
+        print("[로그] GitHub 토큰이 설정되었습니다.")
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
+    else:
+        print("[로그] 경고: GitHub 토큰이 설정되지 않았습니다. API 속도 제한이 더 엄격합니다.")
+    
+    # created_since 매개변수가 제공된 경우 datetime 객체로 변환
+    created_since_date = None
+    if created_since:
+        try:
+            # ISO 8601 형식인 경우
+            if 'T' in created_since:
+                if 'Z' in created_since:
+                    created_since_date = datetime.datetime.fromisoformat(created_since.replace('Z', '+00:00'))
+                    print(f"[로그] created_since 변환 (ISO 8601 + Z): {created_since_date}")
+                elif '+' in created_since or '-' in created_since[10:]:  # 타임존 정보가 있는지 확인
+                    created_since_date = datetime.datetime.fromisoformat(created_since)
+                    print(f"[로그] created_since 변환 (ISO 8601 + 타임존): {created_since_date}")
+                else:
+                    # 시간은 있지만 타임존 정보가 없는 경우
+                    created_since_date = datetime.datetime.fromisoformat(created_since)
+                    created_since_date = created_since_date.replace(tzinfo=datetime.timezone.utc)
+                    print(f"[로그] created_since 변환 (ISO 8601 타임존 없음 -> UTC 추가): {created_since_date}")
+            else:
+                # YYYY-MM-DD 형식인 경우
+                created_since_date = datetime.datetime.strptime(created_since, "%Y-%m-%d")
+                created_since_date = created_since_date.replace(tzinfo=datetime.timezone.utc)
+                print(f"[로그] created_since 변환 (YYYY-MM-DD -> ISO 8601 + UTC): {created_since_date}")
+        except ValueError as e:
+            print(f"[로그] 오류: created_since 날짜 형식 오류: {e}")
+            print("날짜 형식 오류 (created_since): {e}")
+            print("YYYY-MM-DD 또는 ISO 8601 형식을 사용하세요.")
+            return []
+    
+    # 페이지 내 모든 PR이 created_since보다 오래된 경우 페이징 중단 플래그
+    stop_paging = False
     
     while True:
         params = {
@@ -45,28 +88,156 @@ def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None):
             "direction": "desc"
         }
         
+        # 날짜 필터링 매개변수 추가
+        if since:
+            # ISO 8601 형식으로 변환
+            try:
+                # ISO 8601 형식인 경우
+                if 'T' in since:
+                    if 'Z' in since:
+                        # 이미 ISO 8601 형식이므로 그대로 사용
+                        params["since"] = since
+                        print(f"[로그] since 매개변수 사용 (원본 ISO 8601 + Z): {since}")
+                    elif '+' in since or '-' in since[10:]:  # 타임존 정보가 있는지 확인
+                        # 이미 타임존 정보가 있는 ISO 8601 형식
+                        params["since"] = since
+                        print(f"[로그] since 매개변수 사용 (원본 ISO 8601 + 타임존): {since}")
+                    else:
+                        # 시간은 있지만 타임존 정보가 없는 경우
+                        since_date = datetime.datetime.fromisoformat(since)
+                        since_date = since_date.replace(tzinfo=datetime.timezone.utc)
+                        params["since"] = since_date.isoformat()
+                        print(f"[로그] since 매개변수 변환 (타임존 추가): {params['since']}")
+                else:
+                    # YYYY-MM-DD 형식을 ISO 8601 형식으로 변환
+                    since_date = datetime.datetime.strptime(since, "%Y-%m-%d")
+                    since_date = since_date.replace(tzinfo=datetime.timezone.utc)
+                    params["since"] = since_date.isoformat()
+                    print(f"[로그] since 매개변수 변환 (YYYY-MM-DD -> ISO 8601): {params['since']}")
+            except ValueError as e:
+                print(f"[로그] 오류: since 날짜 형식 오류: {e}")
+                print(f"날짜 형식 오류 (since): {e}")
+                print("YYYY-MM-DD 또는 ISO 8601 형식을 사용하세요.")
+                return []
+        
         url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls"
+        print(f"[로그] API 요청: {url} (페이지 {page})")
+        print(f"[로그] 요청 매개변수: {params}")
+        
         response = requests.get(url, headers=headers, params=params)
         
         if response.status_code != 200:
+            print(f"[로그] API 오류: {response.status_code} - {response.text}")
             print(f"PR 가져오기 오류: {response.status_code} - {response.text}")
             break
         
         page_data = response.json()
+        print(f"[로그] 페이지 {page}에서 {len(page_data)}개의 PR을 가져왔습니다.")
         
         if not page_data:
+            print(f"[로그] 더 이상 PR이 없습니다. 페이지 {page}에서 종료합니다.")
             break
+        
+        # until 매개변수가 제공된 경우 수동으로 필터링
+        if until or created_since_date:
+            original_count = len(page_data)
+            # until 매개변수 처리
+            if until:
+                try:
+                    # ISO 8601 형식인 경우
+                    if 'T' in until:
+                        if 'Z' in until:
+                            until_date = datetime.datetime.fromisoformat(until.replace('Z', '+00:00'))
+                            print(f"[로그] until 변환 (ISO 8601 + Z): {until_date}")
+                        elif '+' in until or '-' in until[10:]:  # 타임존 정보가 있는지 확인
+                            until_date = datetime.datetime.fromisoformat(until)
+                            print(f"[로그] until 변환 (ISO 8601 + 타임존): {until_date}")
+                        else:
+                            # 시간은 있지만 타임존 정보가 없는 경우
+                            until_date = datetime.datetime.fromisoformat(until)
+                            until_date = until_date.replace(tzinfo=datetime.timezone.utc)
+                            print(f"[로그] until 변환 (ISO 8601 타임존 없음 -> UTC 추가): {until_date}")
+                    else:
+                        # YYYY-MM-DD 형식인 경우
+                        until_date = datetime.datetime.strptime(until, "%Y-%m-%d")
+                        # 종료일은 해당 일의 끝(23:59:59)까지 포함
+                        until_date = until_date.replace(hour=23, minute=59, second=59, tzinfo=datetime.timezone.utc)
+                        print(f"[로그] until 변환 (YYYY-MM-DD -> ISO 8601 + UTC, 23:59:59): {until_date}")
+                except ValueError as e:
+                    print(f"[로그] 오류: until 날짜 형식 오류: {e}")
+                    print(f"날짜 형식 오류 (until): {e}")
+                    print("YYYY-MM-DD 또는 ISO 8601 형식을 사용하세요.")
+                    return []
+            else:
+                until_date = None
+                print("[로그] until 필터가 제공되지 않았습니다.")
             
+            filtered_data = []
+            filtered_out_count = 0
+            
+            # 페이지 내 모든 PR이 created_since보다 오래된지 확인하기 위한 카운터
+            all_prs_too_old = True if created_since_date else False
+            
+            for pr in page_data:
+                # PR의 생성 날짜에서 타임존 정보 추출
+                created_at_str = pr['created_at']
+                try:
+                    # GitHub API는 ISO 8601 형식으로 날짜를 반환합니다 (예: 2023-01-01T12:00:00Z)
+                    # Z는 UTC 타임존을 의미합니다
+                    if 'Z' in created_at_str:
+                        # Z를 +00:00으로 변환하여 타임존 정보를 명시적으로 포함
+                        created_at = datetime.datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                    else:
+                        # 이미 타임존 정보가 있는 경우
+                        created_at = datetime.datetime.fromisoformat(created_at_str)
+                except ValueError:
+                    # 다른 형식인 경우 직접 파싱
+                    created_at = datetime.datetime.strptime(created_at_str, "%Y-%m-%dT%H:%M:%SZ")
+                    # 타임존 정보 추가
+                    created_at = created_at.replace(tzinfo=datetime.timezone.utc)
+                
+                # until 필터링
+                if until_date and created_at > until_date:
+                    filtered_out_count += 1
+                    continue
+                
+                # created_since 필터링
+                if created_since_date:
+                    if created_at < created_since_date:
+                        filtered_out_count += 1
+                        continue
+                    else:
+                        # 하나라도 created_since_date 이후의 PR이 있으면 all_prs_too_old는 False
+                        all_prs_too_old = False
+                
+                filtered_data.append(pr)
+            
+            page_data = filtered_data
+            print(f"[로그] 클라이언트 측 필터링 결과: {original_count}개 중 {len(page_data)}개 유지, {filtered_out_count}개 필터링됨")
+            
+            # 페이지 내 모든 PR이 created_since보다 오래된 경우 페이징 중단
+            if created_since_date and all_prs_too_old:
+                print(f"[로그] 페이지 {page}의 모든 PR이 {created_since_date}보다 오래되었습니다. 페이징을 중단합니다.")
+                stop_paging = True
+        
         pull_requests.extend(page_data)
         
         page += 1
         
+        # 페이징 중단 조건 확인
+        if stop_paging:
+            print("[로그] 페이징 중단: 더 이상의 PR은 날짜 필터 조건을 만족하지 않습니다.")
+            break
+        
         if max_pages and page > max_pages:
+            print(f"[로그] 최대 페이지 수({max_pages})에 도달했습니다. 페이징을 중단합니다.")
             break
             
         # GitHub API 속도 제한 준수
+        print("[로그] API 속도 제한 준수를 위해 0.5초 대기")
         time.sleep(0.5)
     
+    print(f"[로그] 총 {len(pull_requests)}개의 PR을 가져왔습니다.")
     return pull_requests
 
 def get_pr_reviews(owner, repo, pr_number):
@@ -382,8 +553,9 @@ def main():
                         help="상태별 PR 필터링 (기본값: all)")
     parser.add_argument("--max-prs", type=int, help="처리할 최대 PR 수")
     parser.add_argument("--output", default="pr_metrics.csv", help="출력 파일 경로 (기본값: pr_metrics.csv)")
-    parser.add_argument("--start-date", help="시작 날짜 (YYYY-MM-DD 형식)")
-    parser.add_argument("--end-date", help="종료 날짜 (YYYY-MM-DD 형식)")
+    parser.add_argument("--start-date", help="시작 날짜 (YYYY-MM-DD 형식) - PR 생성 날짜 기준")
+    parser.add_argument("--end-date", help="종료 날짜 (YYYY-MM-DD 형식) - PR 생성 날짜 기준")
+    parser.add_argument("--updated-since", help="이 날짜 이후에 업데이트된 PR만 가져옵니다 (YYYY-MM-DD 형식)")
     
     args = parser.parse_args()
     
@@ -394,74 +566,60 @@ def main():
     
     # Pull Request 가져오기
     print(f"{args.owner}/{args.repo}에서 Pull Request 가져오는 중...")
-    pull_requests = get_pull_requests(args.owner, args.repo, args.state, max_pages=max_pages)
+    pull_requests = get_pull_requests(
+        args.owner, 
+        args.repo, 
+        args.state, 
+        max_pages=max_pages, 
+        since=args.updated_since,  # 업데이트 날짜 기준 필터링
+        until=args.end_date,       # 생성 날짜 기준 필터링 (종료일)
+        created_since=args.start_date  # 생성 날짜 기준 필터링 (시작일)
+    )
     
     if args.max_prs and len(pull_requests) > args.max_prs:
         pull_requests = pull_requests[:args.max_prs]
     
     print(f"총 {len(pull_requests)}개의 Pull Request를 가져왔습니다.")
     
-    # 날짜 필터링
-    if args.start_date or args.end_date:
-        filtered_prs = []
-        start_date = None
-        end_date = None
-        
-        if args.start_date:
-            start_date = datetime.datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
-        if args.end_date:
-            end_date = datetime.datetime.strptime(args.end_date, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
-            # 종료일은 해당 일의 끝(23:59:59)까지 포함
-            end_date = end_date.replace(hour=23, minute=59, second=59)
-        
-        for pr in pull_requests:
-            pr_date = datetime.datetime.strptime(pr['created_at'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-            
-            if start_date and pr_date < start_date:
-                continue
-            if end_date and pr_date > end_date:
-                continue
-            
-            filtered_prs.append(pr)
-        
-        pull_requests = filtered_prs
-        
-        # 필터링 결과 출력
-        date_range_str = ""
-        if args.start_date and args.end_date:
-            date_range_str = f"{args.start_date}부터 {args.end_date}까지"
-        elif args.start_date:
-            date_range_str = f"{args.start_date}부터"
-        elif args.end_date:
-            date_range_str = f"{args.end_date}까지"
-        
-        print(f"{date_range_str}의 기간 동안 {len(pull_requests)}개의 Pull Request를 필터링했습니다.")
+    # 날짜 범위 정보 출력
+    date_filters = []
+    if args.start_date:
+        date_filters.append(f"생성 날짜 >= {args.start_date}")
+    if args.end_date:
+        date_filters.append(f"생성 날짜 <= {args.end_date}")
+    if args.updated_since:
+        date_filters.append(f"업데이트 날짜 >= {args.updated_since}")
     
+    if date_filters:
+        print(f"적용된 필터: {', '.join(date_filters)}")
+        print(f"필터링된 Pull Request: {len(pull_requests)}개")
+    
+    # PR이 없는 경우 처리
     if not pull_requests:
         print("Pull Request를 찾을 수 없습니다. 종료합니다.")
         return
     
     # 메트릭 계산
     print("PR 메트릭 계산 중...")
-    metrics_df = calculate_pr_metrics(args.owner, args.repo, pull_requests)
+    df = calculate_pr_metrics(args.owner, args.repo, pull_requests)
     
     # 파일로 저장
-    metrics_df.to_csv(args.output, index=False)
+    df.to_csv(args.output, index=False)
     print(f"메트릭이 {args.output}에 저장되었습니다.")
     
     # 요약 통계 출력
     print("\n요약 통계:")
-    print(f"총 PR 수: {len(metrics_df)}")
-    print(f"머지된 PR: {metrics_df['is_merged'].sum()} ({metrics_df['is_merged'].mean() * 100:.1f}%)")
-    print(f"평균 PR 크기: {metrics_df['pr_size'].mean():.1f} 라인")
-    print(f"평균 PR 기간: {metrics_df['pr_duration_hours'].mean():.1f} 시간")
+    print(f"총 PR 수: {len(df)}")
+    print(f"머지된 PR: {df['is_merged'].sum()} ({df['is_merged'].mean() * 100:.1f}%)")
+    print(f"평균 PR 크기: {df['pr_size'].mean():.1f} 라인")
+    print(f"평균 PR 기간: {df['pr_duration_hours'].mean():.1f} 시간")
     
-    if not metrics_df['time_to_first_review_hours'].isna().all():
-        print(f"첫 리뷰까지의 평균 시간: {metrics_df['time_to_first_review_hours'].mean():.1f} 시간")
+    if not df['time_to_first_review_hours'].isna().all():
+        print(f"첫 리뷰까지의 평균 시간: {df['time_to_first_review_hours'].mean():.1f} 시간")
     
-    print(f"PR당 평균 리뷰 수: {metrics_df['review_count'].mean():.1f}")
-    print(f"PR당 평균 코멘트 수: {metrics_df['comment_count'].mean():.1f}")
-    print(f"PR당 평균 승인 리뷰어 수: {metrics_df['approved_reviewers'].apply(len).mean():.1f}")
+    print(f"PR당 평균 리뷰 수: {df['review_count'].mean():.1f}")
+    print(f"PR당 평균 코멘트 수: {df['comment_count'].mean():.1f}")
+    print(f"PR당 평균 승인 리뷰어 수: {df['approved_reviewers'].apply(len).mean():.1f}")
 
 if __name__ == "__main__":
     main()
