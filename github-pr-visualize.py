@@ -96,7 +96,7 @@ def plot_pr_duration_histogram(df, output_file=None):
     filtered_data = duration_data[duration_data <= upper_bound]
     
     sns.histplot(filtered_data, bins=30, kde=True)
-    plt.title('PR 생성부터 병합/종료까지 소요 시간 분포')
+    plt.title('PR 생명주기 소요 시간 분포')
     plt.xlabel('PR 생명주기 소요 시간 (시간)')
     plt.ylabel('건수')
     plt.grid(True, alpha=0.3)
@@ -668,6 +668,97 @@ def plot_pr_size_distribution(df, output_file=None):
     else:
         plt.show()
 
+def plot_pr_lifecycle_stages(df, output_file=None):
+    """PR 수명 주기 단계별 소요 시간을 분석하여 시각화합니다."""
+    plt.figure(figsize=(14, 8))
+    
+    # 필요한 열이 있는지 확인
+    required_columns = ['created_at', 'merged_at', 'time_to_first_review_hours']
+    if not all(col in df.columns for col in required_columns):
+        print("PR 수명 주기 분석에 필요한 열이 없습니다")
+        return
+    
+    # 병합된 PR만 필터링
+    merged_prs = df.dropna(subset=['merged_at']).copy()
+    
+    if merged_prs.empty:
+        print("병합된 PR 데이터가 없습니다")
+        return
+    
+    # 첫 리뷰 시간이 없는 경우 필터링
+    merged_prs = merged_prs.dropna(subset=['time_to_first_review_hours'])
+    
+    if merged_prs.empty:
+        print("첫 리뷰 시간 데이터가 있는 병합된 PR이 없습니다")
+        return
+    
+    # 각 단계별 시간 계산
+    merged_prs['first_review_time'] = merged_prs['time_to_first_review_hours']
+    
+    # 전체 PR 기간
+    merged_prs['total_duration'] = (merged_prs['merged_at'] - merged_prs['created_at']).dt.total_seconds() / 3600
+    
+    # 첫 리뷰 이후부터 병합까지의 시간
+    merged_prs['review_to_merge_time'] = merged_prs['total_duration'] - merged_prs['first_review_time']
+    
+    # 음수 값이 있으면 0으로 설정 (데이터 오류 방지)
+    merged_prs['review_to_merge_time'] = merged_prs['review_to_merge_time'].clip(lower=0)
+    
+    # 최근 15개 PR만 선택 (가독성을 위해)
+    recent_prs = merged_prs.sort_values('merged_at', ascending=False).head(15)
+    
+    # PR 번호를 문자열로 변환
+    recent_prs['pr_number_str'] = recent_prs['pr_number'].astype(str)
+    
+    # 그래프 데이터 준비
+    pr_numbers = recent_prs['pr_number_str'].values
+    first_review_times = recent_prs['first_review_time'].values
+    review_to_merge_times = recent_prs['review_to_merge_time'].values
+    
+    # 누적 막대 그래프 생성
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    # 첫 번째 단계: 생성부터 첫 리뷰까지
+    bars1 = ax.barh(pr_numbers, first_review_times, color='#3498db', alpha=0.8, label='생성 → 첫 리뷰')
+    
+    # 두 번째 단계: 첫 리뷰부터 병합까지
+    bars2 = ax.barh(pr_numbers, review_to_merge_times, left=first_review_times, color='#2ecc71', alpha=0.8, label='첫 리뷰 → 병합')
+    
+    # 각 단계의 시간을 바 위에 표시
+    for i, (bar1, bar2) in enumerate(zip(bars1, bars2)):
+        # 첫 번째 단계 시간
+        width1 = bar1.get_width()
+        ax.text(width1 / 2, i, f'{width1:.1f}h', ha='center', va='center', color='white', fontweight='bold')
+        
+        # 두 번째 단계 시간
+        width2 = bar2.get_width()
+        if width2 > 5:  # 너무 작은 바에는 텍스트 표시 안 함
+            ax.text(width1 + width2 / 2, i, f'{width2:.1f}h', ha='center', va='center', color='white', fontweight='bold')
+        
+        # 전체 시간
+        total_width = width1 + width2
+        ax.text(total_width + 1, i, f'총 {total_width:.1f}h', va='center')
+    
+    # 그래프 제목 및 레이블 설정
+    ax.set_title('PR 수명 주기 단계별 소요 시간 (최근 병합된 15개 PR)')
+    ax.set_xlabel('소요 시간 (시간)')
+    ax.set_ylabel('PR 번호')
+    ax.legend(loc='upper right')
+    
+    # Y축 레이블 정렬
+    plt.gca().invert_yaxis()  # 최근 PR이 위에 오도록 순서 뒤집기
+    
+    # 그리드 추가
+    ax.grid(True, axis='x', alpha=0.3)
+    
+    plt.tight_layout()
+    
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
 def main():
     parser = argparse.ArgumentParser(description='GitHub PR 데이터 시각화')
     parser.add_argument('input_file', help='PR 지표가 포함된 CSV 파일')
@@ -733,6 +824,10 @@ def main():
     
     plot_pr_size_distribution(df, 
         None if args.show else os.path.join(args.output_dir, f"pr_size_distribution{date_suffix}.png"))
+    
+    # 새로 추가된 PR 수명 주기 단계별 소요 시간 분석 차트
+    plot_pr_lifecycle_stages(df,
+        None if args.show else os.path.join(args.output_dir, f"pr_lifecycle_stages{date_suffix}.png"))
     
     if not args.show:
         print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")
