@@ -132,7 +132,6 @@ python github-pr-visualize.py [입력_파일] [옵션]
 #### 인수 설명:
 - `입력_파일`: PR 지표가 포함된 CSV 파일(github-pr-metrics.py 출력)
 - `--output-dir`: 차트 출력 디렉토리(기본값: charts)
-- `--show`: 파일 저장 대신 차트를 화면에 표시
 - `--start-date`: 시작 날짜(YYYY-MM-DD 형식)
 - `--end-date`: 종료 날짜(YYYY-MM-DD 형식)
 
@@ -143,9 +142,6 @@ python github-pr-visualize.py pr_metrics.csv
 
 # 사용자 지정 출력 디렉토리 사용
 python github-pr-visualize.py react_metrics.csv --output-dir react_charts
-
-# 차트를 화면에 표시
-python github-pr-visualize.py tensorflow_metrics.csv --show
 
 # 특정 기간의 PR만 시각화
 python github-pr-visualize.py pr_metrics.csv --start-date 2023-01-01 --end-date 2023-12-31 --output-dir charts_2023

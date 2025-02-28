@@ -1412,7 +1412,6 @@ def main():
     parser = argparse.ArgumentParser(description='GitHub PR 데이터 시각화')
     parser.add_argument('input_file', help='PR 지표가 포함된 CSV 파일')
     parser.add_argument('--output-dir', default='charts', help='차트 출력 디렉토리')
-    parser.add_argument('--show', action='store_true', help='파일 저장 대신 차트를 화면에 표시')
     parser.add_argument('--start-date', help='시작 날짜 (YYYY-MM-DD 형식)')
     parser.add_argument('--end-date', help='종료 날짜 (YYYY-MM-DD 형식)')
     
@@ -1436,78 +1435,77 @@ def main():
     print("차트 생성 중...")
     
     plot_pr_duration_histogram(df, 
-        None if args.show else os.path.join(args.output_dir, f"pr_duration_histogram{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_duration_histogram{date_suffix}.png"))
     
     plot_pr_size_vs_duration(df, 
-        None if args.show else os.path.join(args.output_dir, f"pr_size_vs_duration{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_size_vs_duration{date_suffix}.png"))
     
     plot_review_time_trend(df, 
-        None if args.show else os.path.join(args.output_dir, f"review_time_trend{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_time_trend{date_suffix}.png"))
     
     plot_review_load_by_reviewer(df, 
-        None if args.show else os.path.join(args.output_dir, f"review_load_by_reviewer{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_load_by_reviewer{date_suffix}.png"))
     
     plot_approved_reviewers(df, 
-        None if args.show else os.path.join(args.output_dir, f"approved_reviewers{date_suffix}.png"))
+        os.path.join(args.output_dir, f"approved_reviewers{date_suffix}.png"))
     
     plot_approval_ratio_by_reviewer(df, 
-        None if args.show else os.path.join(args.output_dir, f"approval_ratio_by_reviewer{date_suffix}.png"))
+        os.path.join(args.output_dir, f"approval_ratio_by_reviewer{date_suffix}.png"))
     
     plot_pr_creation_over_time(df, 
-        None if args.show else os.path.join(args.output_dir, f"pr_creation_over_time{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_creation_over_time{date_suffix}.png"))
     
     plot_pr_outcome_by_size(df, 
-        None if args.show else os.path.join(args.output_dir, f"pr_outcome_by_size{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_outcome_by_size{date_suffix}.png"))
     
     plot_review_iterations_by_size(df, 
-        None if args.show else os.path.join(args.output_dir, f"review_iterations_by_size{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_iterations_by_size{date_suffix}.png"))
     
     plot_reviewers_per_pr(df, 
-        None if args.show else os.path.join(args.output_dir, f"reviewers_per_pr{date_suffix}.png"))
+        os.path.join(args.output_dir, f"reviewers_per_pr{date_suffix}.png"))
     
     plot_pr_throughput_over_time(df, 
-        None if args.show else os.path.join(args.output_dir, f"pr_throughput_over_time{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_throughput_over_time{date_suffix}.png"))
     
     plot_review_comments_per_pr_size(df, 
-        None if args.show else os.path.join(args.output_dir, f"review_comments_per_pr_size{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_comments_per_pr_size{date_suffix}.png"))
     
     plot_pr_size_distribution(df, 
-        None if args.show else os.path.join(args.output_dir, f"pr_size_distribution{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_size_distribution{date_suffix}.png"))
     
     # 새로 추가된 PR 수명 주기 단계별 소요 시간 분석 차트
     plot_pr_lifecycle_stages(df,
-        None if args.show else os.path.join(args.output_dir, f"pr_lifecycle_stages{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_lifecycle_stages{date_suffix}.png"))
     
     # 새로 추가된 PR 복잡도 지표 차트
     plot_pr_complexity_metrics(df,
-        None if args.show else os.path.join(args.output_dir, f"pr_complexity_metrics{date_suffix}.png"))
+        os.path.join(args.output_dir, f"pr_complexity_metrics{date_suffix}.png"))
     
     # 새로 추가된 코드 리뷰 카테고리 시각화
     print("코드 리뷰 카테고리 시각화 차트 생성 중...")
     
     plot_review_category_distribution(df,
-        None if args.show else os.path.join(args.output_dir, f"review_category_distribution{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_category_distribution{date_suffix}.png"))
     
     plot_review_category_trend(df,
-        None if args.show else os.path.join(args.output_dir, f"review_category_trend{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_category_trend{date_suffix}.png"))
     
     plot_review_category_by_pr_size(df,
-        None if args.show else os.path.join(args.output_dir, f"review_category_by_pr_size{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_category_by_pr_size{date_suffix}.png"))
     
     plot_review_category_by_reviewer(df,
-        None if args.show else os.path.join(args.output_dir, f"review_category_by_reviewer{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_category_by_reviewer{date_suffix}.png"))
     
     plot_review_category_correlation(df,
-        None if args.show else os.path.join(args.output_dir, f"review_category_correlation{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_category_correlation{date_suffix}.png"))
     
     plot_review_category_by_outcome(df,
-        None if args.show else os.path.join(args.output_dir, f"review_category_by_outcome{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_category_by_outcome{date_suffix}.png"))
     
     plot_review_category_lifecycle_impact(df,
-        None if args.show else os.path.join(args.output_dir, f"review_category_lifecycle_impact{date_suffix}.png"))
+        os.path.join(args.output_dir, f"review_category_lifecycle_impact{date_suffix}.png"))
     
-    if not args.show:
-        print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")
+    print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")
 
 if __name__ == "__main__":
     main()
