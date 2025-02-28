@@ -64,7 +64,7 @@ def set_korean_font():
 # 한글 폰트 설정 적용
 set_korean_font()
 
-def load_pr_data(file_path, start_date=None, end_date=None):
+def load_pr_data(file_path):
     """CSV 파일에서 PR 메트릭 데이터를 로드합니다."""
     df = pd.read_csv(file_path)
     
@@ -73,16 +73,6 @@ def load_pr_data(file_path, start_date=None, end_date=None):
     for col in date_columns:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col])
-    
-    # 날짜 필터링
-    if start_date or end_date:
-        if 'created_at' in df.columns:
-            if start_date:
-                start_date = pd.to_datetime(start_date)
-                df = df[df['created_at'] >= start_date]
-            if end_date:
-                end_date = pd.to_datetime(end_date)
-                df = df[df['created_at'] <= end_date]
     
     return df
 
@@ -1412,8 +1402,6 @@ def main():
     parser = argparse.ArgumentParser(description='GitHub PR 데이터 시각화')
     parser.add_argument('input_file', help='PR 지표가 포함된 CSV 파일')
     parser.add_argument('--output-dir', default='charts', help='차트 출력 디렉토리')
-    parser.add_argument('--start-date', help='시작 날짜 (YYYY-MM-DD 형식)')
-    parser.add_argument('--end-date', help='종료 날짜 (YYYY-MM-DD 형식)')
     
     args = parser.parse_args()
     
@@ -1421,89 +1409,82 @@ def main():
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     
-    # PR 데이터 로드 및 필터링
-    df = load_pr_data(args.input_file, args.start_date, args.end_date)
-    
-    # 날짜 필터링이 적용된 경우 파일 이름에 날짜 접미사 추가
-    date_suffix = ''
-    if args.start_date:
-        date_suffix += f"_from_{args.start_date}"
-    if args.end_date:
-        date_suffix += f"_to_{args.end_date}"
+    # PR 데이터 로드
+    df = load_pr_data(args.input_file)
     
     # 차트 생성
     print("차트 생성 중...")
     
     plot_pr_duration_histogram(df, 
-        os.path.join(args.output_dir, f"pr_duration_histogram{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_duration_histogram.png"))
     
     plot_pr_size_vs_duration(df, 
-        os.path.join(args.output_dir, f"pr_size_vs_duration{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_size_vs_duration.png"))
     
     plot_review_time_trend(df, 
-        os.path.join(args.output_dir, f"review_time_trend{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_time_trend.png"))
     
     plot_review_load_by_reviewer(df, 
-        os.path.join(args.output_dir, f"review_load_by_reviewer{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_load_by_reviewer.png"))
     
     plot_approved_reviewers(df, 
-        os.path.join(args.output_dir, f"approved_reviewers{date_suffix}.png"))
+        os.path.join(args.output_dir, "approved_reviewers.png"))
     
     plot_approval_ratio_by_reviewer(df, 
-        os.path.join(args.output_dir, f"approval_ratio_by_reviewer{date_suffix}.png"))
+        os.path.join(args.output_dir, "approval_ratio_by_reviewer.png"))
     
     plot_pr_creation_over_time(df, 
-        os.path.join(args.output_dir, f"pr_creation_over_time{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_creation_over_time.png"))
     
     plot_pr_outcome_by_size(df, 
-        os.path.join(args.output_dir, f"pr_outcome_by_size{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_outcome_by_size.png"))
     
     plot_review_iterations_by_size(df, 
-        os.path.join(args.output_dir, f"review_iterations_by_size{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_iterations_by_size.png"))
     
     plot_reviewers_per_pr(df, 
-        os.path.join(args.output_dir, f"reviewers_per_pr{date_suffix}.png"))
+        os.path.join(args.output_dir, "reviewers_per_pr.png"))
     
     plot_pr_throughput_over_time(df, 
-        os.path.join(args.output_dir, f"pr_throughput_over_time{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_throughput_over_time.png"))
     
     plot_review_comments_per_pr_size(df, 
-        os.path.join(args.output_dir, f"review_comments_per_pr_size{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_comments_per_pr_size.png"))
     
     plot_pr_size_distribution(df, 
-        os.path.join(args.output_dir, f"pr_size_distribution{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_size_distribution.png"))
     
     # 새로 추가된 PR 수명 주기 단계별 소요 시간 분석 차트
     plot_pr_lifecycle_stages(df,
-        os.path.join(args.output_dir, f"pr_lifecycle_stages{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_lifecycle_stages.png"))
     
     # 새로 추가된 PR 복잡도 지표 차트
     plot_pr_complexity_metrics(df,
-        os.path.join(args.output_dir, f"pr_complexity_metrics{date_suffix}.png"))
+        os.path.join(args.output_dir, "pr_complexity_metrics.png"))
     
     # 새로 추가된 코드 리뷰 카테고리 시각화
     print("코드 리뷰 카테고리 시각화 차트 생성 중...")
     
     plot_review_category_distribution(df,
-        os.path.join(args.output_dir, f"review_category_distribution{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_category_distribution.png"))
     
     plot_review_category_trend(df,
-        os.path.join(args.output_dir, f"review_category_trend{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_category_trend.png"))
     
     plot_review_category_by_pr_size(df,
-        os.path.join(args.output_dir, f"review_category_by_pr_size{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_category_by_pr_size.png"))
     
     plot_review_category_by_reviewer(df,
-        os.path.join(args.output_dir, f"review_category_by_reviewer{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_category_by_reviewer.png"))
     
     plot_review_category_correlation(df,
-        os.path.join(args.output_dir, f"review_category_correlation{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_category_correlation.png"))
     
     plot_review_category_by_outcome(df,
-        os.path.join(args.output_dir, f"review_category_by_outcome{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_category_by_outcome.png"))
     
     plot_review_category_lifecycle_impact(df,
-        os.path.join(args.output_dir, f"review_category_lifecycle_impact{date_suffix}.png"))
+        os.path.join(args.output_dir, "review_category_lifecycle_impact.png"))
     
     print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")
 

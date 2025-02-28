@@ -132,8 +132,6 @@ python github-pr-visualize.py [입력_파일] [옵션]
 #### 인수 설명:
 - `입력_파일`: PR 지표가 포함된 CSV 파일(github-pr-metrics.py 출력)
 - `--output-dir`: 차트 출력 디렉토리(기본값: charts)
-- `--start-date`: 시작 날짜(YYYY-MM-DD 형식)
-- `--end-date`: 종료 날짜(YYYY-MM-DD 형식)
 
 #### 예시:
 ```bash
@@ -142,9 +140,6 @@ python github-pr-visualize.py pr_metrics.csv
 
 # 사용자 지정 출력 디렉토리 사용
 python github-pr-visualize.py react_metrics.csv --output-dir react_charts
-
-# 특정 기간의 PR만 시각화
-python github-pr-visualize.py pr_metrics.csv --start-date 2023-01-01 --end-date 2023-12-31 --output-dir charts_2023
 ```
 
 ## 전체 워크플로우 예시
@@ -160,12 +155,6 @@ python github-pr-metrics.py kubernetes kubernetes --max-prs 200 --output k8s_met
 
 # 3. 차트 생성
 python github-pr-visualize.py k8s_metrics.csv --output-dir k8s_charts
-
-# 4. 특정 연도의 PR 지표 수집
-python github-pr-metrics.py kubernetes kubernetes --start-date 2023-01-01 --end-date 2023-12-31 --output k8s_2023_metrics.csv
-
-# 5. 2023년 데이터의 차트 생성
-python github-pr-visualize.py k8s_2023_metrics.csv --output-dir k8s_2023_charts
 ```
 
 ## 제한 사항
