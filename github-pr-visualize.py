@@ -8,6 +8,8 @@ import os
 import platform
 import matplotlib.font_manager as fm
 from datetime import datetime
+import networkx as nx
+from matplotlib.colors import Normalize
 
 # 한글 폰트 설정
 def set_korean_font():
@@ -978,6 +980,434 @@ def plot_pr_complexity_metrics(df, output_file=None):
     else:
         plt.show()
 
+def plot_review_category_distribution(df, output_file=None):
+    """코드 리뷰 카테고리 분포를 시각화합니다."""
+    plt.figure(figsize=(12, 8))
+    
+    # 리뷰 카테고리 컬럼 추출
+    category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 카테고리별 총합 계산
+    category_sums = {}
+    for col in category_columns:
+        # 컬럼 이름에서 'review_category_' 접두사 제거하고 언더스코어를 공백으로 변환
+        category_name = col.replace('review_category_', '').replace('_', ' ')
+        category_sums[category_name] = df[col].sum()
+    
+    # 합계가 0인 카테고리 제거
+    category_sums = {k: v for k, v in category_sums.items() if v > 0}
+    
+    # 내림차순으로 정렬
+    sorted_categories = dict(sorted(category_sums.items(), key=lambda item: item[1], reverse=True))
+    
+    # 파이 차트 생성
+    plt.subplot(1, 2, 1)
+    plt.pie(sorted_categories.values(), labels=sorted_categories.keys(), autopct='%1.1f%%', 
+            startangle=90, shadow=True, wedgeprops={'edgecolor': 'white'})
+    plt.axis('equal')  # 원형 파이 차트를 위한 설정
+    plt.title('코드 리뷰 카테고리 분포')
+    
+    # 막대 그래프 생성
+    plt.subplot(1, 2, 2)
+    plt.barh(list(sorted_categories.keys()), list(sorted_categories.values()))
+    plt.xlabel('리뷰 수')
+    plt.title('코드 리뷰 카테고리별 리뷰 수')
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+def plot_review_category_trend(df, output_file=None):
+    """시간에 따른 코드 리뷰 카테고리 트렌드를 시각화합니다."""
+    plt.figure(figsize=(14, 8))
+    
+    # 리뷰 카테고리 컬럼 추출
+    category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 날짜별로 그룹화
+    df_grouped = df.groupby('created_at_date')[category_columns].sum()
+    
+    # 컬럼 이름 변환
+    df_grouped.columns = [col.replace('review_category_', '').replace('_', ' ') for col in df_grouped.columns]
+    
+    # 합계가 0인 카테고리 제거
+    non_zero_columns = [col for col in df_grouped.columns if df_grouped[col].sum() > 0]
+    df_grouped = df_grouped[non_zero_columns]
+    
+    # 시간에 따른 트렌드 그래프 그리기
+    plt.subplot(2, 1, 1)
+    for column in non_zero_columns:
+        plt.plot(df_grouped.index, df_grouped[column], marker='o', label=column)
+    
+    plt.title('시간에 따른 코드 리뷰 카테고리 트렌드')
+    plt.xlabel('날짜')
+    plt.ylabel('리뷰 수')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # 누적 영역 그래프
+    plt.subplot(2, 1, 2)
+    df_grouped[non_zero_columns].plot.area(figsize=(14, 6), alpha=0.6, ax=plt.gca())
+    plt.title('시간에 따른 코드 리뷰 카테고리 누적 분포')
+    plt.xlabel('날짜')
+    plt.ylabel('리뷰 수')
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+def plot_review_category_by_pr_size(df, output_file=None):
+    """PR 크기별 코드 리뷰 카테고리 분포를 시각화합니다."""
+    plt.figure(figsize=(14, 10))
+    
+    # PR 크기 구간 정의
+    df['size_category'] = pd.cut(df['pr_size'], 
+                                    bins=[0, 50, 200, 500, 1000, float('inf')],
+                                    labels=['매우 작음 (< 50)', '작음 (50-200)', '중간 (200-500)', '큼 (500-1000)', '매우 큼 (> 1000)'])
+    
+    # 리뷰 카테고리 컬럼 추출
+    category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 컬럼 이름 변환 함수
+    def clean_category_name(col):
+        return col.replace('review_category_', '').replace('_', ' ')
+    
+    # PR 크기별로 그룹화하여 각 카테고리의 평균 개수 계산
+    df_grouped = df.groupby('size_category')[category_columns].mean()
+    
+    # 합계가 0인 카테고리 제거
+    non_zero_columns = [col for col in category_columns if df[col].sum() > 0]
+    
+    # 히트맵 생성
+    plt.subplot(2, 1, 1)
+    heatmap_data = df_grouped[non_zero_columns].copy()
+    heatmap_data.columns = [clean_category_name(col) for col in heatmap_data.columns]
+    
+    sns.heatmap(heatmap_data, annot=True, cmap='YlGnBu', fmt='.2f')
+    plt.title('PR 크기별 코드 리뷰 카테고리 분포 (평균)')
+    plt.ylabel('PR 크기')
+    
+    # 스택 바 차트 생성
+    plt.subplot(2, 1, 2)
+    
+    # 각 크기 카테고리별 총 리뷰 수 계산
+    size_category_counts = df.groupby('size_category')[non_zero_columns].sum()
+    size_category_counts.columns = [clean_category_name(col) for col in size_category_counts.columns]
+    
+    # 스택 바 차트 그리기
+    size_category_counts.plot(kind='bar', stacked=True, figsize=(14, 6), ax=plt.gca())
+    plt.title('PR 크기별 코드 리뷰 카테고리 분포 (총합)')
+    plt.xlabel('PR 크기')
+    plt.ylabel('리뷰 수')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+def plot_review_category_by_reviewer(df, output_file=None):
+    """리뷰어별 코드 리뷰 카테고리 분포를 시각화합니다."""
+    plt.figure(figsize=(15, 10))
+    
+    # 리뷰 카테고리 컬럼 추출
+    category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 리뷰어 정보가 있는 PR만 필터링
+    df_with_reviewers = df[df['reviewer_count'] > 0].copy()
+    
+    # 리뷰어 목록을 개별 행으로 변환
+    reviewer_rows = []
+    
+    for _, row in df_with_reviewers.iterrows():
+        if isinstance(row['reviewers'], str) and row['reviewers']:
+            # 문자열에서 리스트로 변환 (예: "['user1', 'user2']" -> ['user1', 'user2'])
+            reviewers = eval(row['reviewers']) if row['reviewers'].startswith('[') else [row['reviewers']]
+            
+            for reviewer in reviewers:
+                reviewer_row = row[category_columns].copy()
+                reviewer_row['reviewer'] = reviewer
+                reviewer_rows.append(reviewer_row)
+    
+    if not reviewer_rows:
+        print("경고: 리뷰어 정보가 없습니다.")
+        return
+    
+    # 리뷰어별 데이터프레임 생성
+    reviewer_df = pd.DataFrame(reviewer_rows)
+    
+    # 리뷰어별로 그룹화하여 각 카테고리의 합계 계산
+    reviewer_category_counts = reviewer_df.groupby('reviewer')[category_columns].sum()
+    
+    # 합계가 0인 카테고리 제거
+    non_zero_columns = [col for col in category_columns if reviewer_df[col].sum() > 0]
+    reviewer_category_counts = reviewer_category_counts[non_zero_columns]
+    
+    # 컬럼 이름 변환
+    reviewer_category_counts.columns = [col.replace('review_category_', '').replace('_', ' ') for col in reviewer_category_counts.columns]
+    
+    # 상위 10명의 리뷰어만 선택 (리뷰 수 기준)
+    top_reviewers = reviewer_category_counts.sum(axis=1).sort_values(ascending=False).head(10).index
+    top_reviewer_counts = reviewer_category_counts.loc[top_reviewers]
+    
+    # 히트맵 생성
+    plt.subplot(2, 1, 1)
+    sns.heatmap(top_reviewer_counts, annot=True, cmap='YlGnBu', fmt='.0f')
+    plt.title('리뷰어별 코드 리뷰 카테고리 분포 (상위 10명)')
+    plt.ylabel('리뷰어')
+    
+    # 스택 바 차트 생성
+    plt.subplot(2, 1, 2)
+    top_reviewer_counts.T.plot(kind='bar', stacked=False, figsize=(15, 6), ax=plt.gca())
+    plt.title('리뷰어별 코드 리뷰 카테고리 분포 (상위 10명)')
+    plt.xlabel('카테고리')
+    plt.ylabel('리뷰 수')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.xticks(rotation=45)
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+def plot_review_category_correlation(df, output_file=None):
+    """코드 리뷰 카테고리 간의 상관관계를 시각화합니다."""
+    plt.figure(figsize=(14, 12))
+    
+    # 리뷰 카테고리 컬럼 추출
+    category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 합계가 0인 카테고리 제거
+    non_zero_columns = [col for col in category_columns if df[col].sum() > 0]
+    
+    if len(non_zero_columns) < 2:
+        print("경고: 상관관계 분석을 위한 충분한 카테고리 데이터가 없습니다.")
+        return
+    
+    # 카테고리 데이터 추출
+    category_data = df[non_zero_columns].copy()
+    
+    # 컬럼 이름 변환
+    category_data.columns = [col.replace('review_category_', '').replace('_', ' ') for col in category_data.columns]
+    
+    # 상관관계 계산
+    correlation = category_data.corr()
+    
+    # 히트맵 생성
+    plt.subplot(2, 1, 1)
+    sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+    plt.title('코드 리뷰 카테고리 간 상관관계')
+    
+    # 네트워크 그래프 생성을 위한 데이터 준비
+    plt.subplot(2, 1, 2)
+    
+    # 상관관계 행렬을 그래프로 변환
+    G = nx.Graph()
+    
+    # 노드 추가
+    for category in correlation.columns:
+        G.add_node(category)
+    
+    # 엣지 추가 (임계값 이상의 상관관계만)
+    for i, cat1 in enumerate(correlation.columns):
+        for j, cat2 in enumerate(correlation.columns):
+            if i < j:  # 중복 방지
+                corr_value = correlation.iloc[i, j]
+                if abs(corr_value) >= 0.1:
+                    G.add_edge(cat1, cat2, weight=abs(corr_value), color='red' if corr_value < 0 else 'blue')
+    
+    # 노드 위치 계산
+    pos = nx.spring_layout(G, seed=42)
+    
+    # 엣지 가중치와 색상
+    edges = G.edges()
+    weights = [G[u][v]['weight'] * 5 for u, v in edges]  # 선 굵기 조정
+    colors = [G[u][v]['color'] for u, v in edges]
+    
+    # 노드 크기 계산 (카테고리별 리뷰 수에 비례)
+    node_sizes = [category_data[node].sum() * 100 for node in G.nodes()]
+    
+    # 그래프 그리기
+    nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='lightblue', alpha=0.8)
+    nx.draw_networkx_edges(G, pos, width=weights, edge_color=colors, alpha=0.7)
+    nx.draw_networkx_labels(G, pos, font_size=10, font_family='sans-serif')
+    
+    # 범례 추가
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color='blue', lw=2, label='양의 상관관계'),
+        Line2D([0], [0], color='red', lw=2, label='음의 상관관계')
+    ]
+    plt.legend(handles=legend_elements, loc='upper right')
+    
+    plt.title('코드 리뷰 카테고리 간 관계 네트워크')
+    plt.axis('off')  # 축 제거
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+def plot_review_category_by_outcome(df, output_file=None):
+    """PR 결과(Merged, Closed, Open)와 코드 리뷰 카테고리 간의 관계를 시각화합니다."""
+    plt.figure(figsize=(14, 10))
+    
+    # 리뷰 카테고리 컬럼 추출
+    category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 합계가 0인 카테고리 제거
+    non_zero_columns = [col for col in category_columns if df[col].sum() > 0]
+    
+    if not non_zero_columns:
+        print("경고: 분석을 위한 코드 리뷰 카테고리 데이터가 없습니다.")
+        return
+    
+    # PR 결과별로 그룹화
+    outcome_groups = df.groupby('outcome')
+    
+    # 결과가 없는 경우 처리
+    if len(outcome_groups) == 0:
+        print("경고: PR 결과 데이터가 없습니다.")
+        return
+    
+    # 각 결과별 카테고리 평균 계산
+    outcome_category_means = outcome_groups[non_zero_columns].mean()
+    
+    # 컬럼 이름 변환
+    outcome_category_means.columns = [col.replace('review_category_', '').replace('_', ' ') for col in outcome_category_means.columns]
+    
+    # 히트맵 생성
+    plt.subplot(2, 1, 1)
+    sns.heatmap(outcome_category_means, annot=True, cmap='YlGnBu', fmt='.2f')
+    plt.title('PR 결과별 코드 리뷰 카테고리 분포 (평균)')
+    
+    # 각 결과별 카테고리 총합 계산
+    outcome_category_sums = outcome_groups[non_zero_columns].sum()
+    outcome_category_sums.columns = [col.replace('review_category_', '').replace('_', ' ') for col in outcome_category_sums.columns]
+    
+    # 정규화 (각 결과별 비율로 변환)
+    outcome_category_normalized = outcome_category_sums.div(outcome_category_sums.sum(axis=1), axis=0)
+    
+    # 스택 바 차트 생성
+    plt.subplot(2, 1, 2)
+    outcome_category_normalized.plot(kind='bar', stacked=True, figsize=(14, 6), ax=plt.gca())
+    plt.title('PR 결과별 코드 리뷰 카테고리 분포 (비율)')
+    plt.xlabel('PR 결과')
+    plt.ylabel('비율')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
+def plot_review_category_lifecycle_impact(df, output_file=None):
+    """코드 리뷰 카테고리가 PR 생명주기 단계에 미치는 영향을 시각화합니다."""
+    plt.figure(figsize=(14, 12))
+    
+    # 리뷰 카테고리 컬럼 추출
+    category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 합계가 0인 카테고리 제거
+    non_zero_columns = [col for col in category_columns if df[col].sum() > 0]
+    
+    if not non_zero_columns:
+        print("경고: 분석을 위한 코드 리뷰 카테고리 데이터가 없습니다.")
+        return
+    
+    # PR 생명주기 관련 컬럼
+    lifecycle_columns = ['pr_duration_hours', 'time_to_first_review_hours', 'review_iterations']
+    
+    # 필요한 컬럼이 있는지 확인
+    missing_columns = [col for col in lifecycle_columns if col not in df.columns]
+    if missing_columns:
+        print(f"경고: 다음 필요한 컬럼이 없습니다: {missing_columns}")
+        return
+    
+    # 상관관계 분석을 위한 데이터 준비
+    analysis_data = df[non_zero_columns + lifecycle_columns].copy()
+    
+    # 컬럼 이름 변환
+    for col in non_zero_columns:
+        new_col = col.replace('review_category_', '').replace('_', ' ')
+        analysis_data = analysis_data.rename(columns={col: new_col})
+    
+    # 생명주기 컬럼 이름 변환
+    lifecycle_column_names = {
+        'pr_duration_hours': 'PR 생명주기 시간',
+        'time_to_first_review_hours': '첫 리뷰까지 시간',
+        'review_iterations': '리뷰 반복 횟수'
+    }
+    analysis_data = analysis_data.rename(columns=lifecycle_column_names)
+    
+    # 변환된 컬럼 이름 목록 업데이트
+    non_zero_column_names = [col.replace('review_category_', '').replace('_', ' ') for col in non_zero_columns]
+    lifecycle_column_names = list(lifecycle_column_names.values())
+    
+    # 상관관계 계산
+    correlation = analysis_data[non_zero_column_names + lifecycle_column_names].corr()
+    
+    # 카테고리와 생명주기 간의 상관관계만 추출
+    category_lifecycle_corr = correlation.loc[non_zero_column_names, lifecycle_column_names]
+    
+    # 히트맵 생성
+    plt.subplot(2, 1, 1)
+    sns.heatmap(category_lifecycle_corr, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+    plt.title('코드 리뷰 카테고리와 PR 생명주기 간의 상관관계')
+    plt.ylabel('코드 리뷰 카테고리')
+    plt.xlabel('PR 생명주기 지표')
+    
+    # 산점도 행렬 생성
+    plt.subplot(2, 1, 2)
+    
+    # 가장 상관관계가 높은 카테고리-생명주기 쌍 찾기
+    abs_corr = category_lifecycle_corr.abs()
+    max_corr_idx = abs_corr.stack().idxmax()
+    max_category, max_lifecycle = max_corr_idx
+    
+    # 산점도 그리기
+    sns.regplot(x=max_category, y=max_lifecycle, data=analysis_data, scatter_kws={'alpha':0.5}, line_kws={'color':'red'})
+    plt.title(f'가장 높은 상관관계: {max_category} vs {max_lifecycle} (r={correlation.loc[max_category, max_lifecycle]:.2f})')
+    plt.xlabel(max_category)
+    plt.ylabel(max_lifecycle)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
 def main():
     parser = argparse.ArgumentParser(description='GitHub PR 데이터 시각화')
     parser.add_argument('input_file', help='PR 지표가 포함된 CSV 파일')
@@ -1051,6 +1481,30 @@ def main():
     # 새로 추가된 PR 복잡도 지표 차트
     plot_pr_complexity_metrics(df,
         None if args.show else os.path.join(args.output_dir, f"pr_complexity_metrics{date_suffix}.png"))
+    
+    # 새로 추가된 코드 리뷰 카테고리 시각화
+    print("코드 리뷰 카테고리 시각화 차트 생성 중...")
+    
+    plot_review_category_distribution(df,
+        None if args.show else os.path.join(args.output_dir, f"review_category_distribution{date_suffix}.png"))
+    
+    plot_review_category_trend(df,
+        None if args.show else os.path.join(args.output_dir, f"review_category_trend{date_suffix}.png"))
+    
+    plot_review_category_by_pr_size(df,
+        None if args.show else os.path.join(args.output_dir, f"review_category_by_pr_size{date_suffix}.png"))
+    
+    plot_review_category_by_reviewer(df,
+        None if args.show else os.path.join(args.output_dir, f"review_category_by_reviewer{date_suffix}.png"))
+    
+    plot_review_category_correlation(df,
+        None if args.show else os.path.join(args.output_dir, f"review_category_correlation{date_suffix}.png"))
+    
+    plot_review_category_by_outcome(df,
+        None if args.show else os.path.join(args.output_dir, f"review_category_by_outcome{date_suffix}.png"))
+    
+    plot_review_category_lifecycle_impact(df,
+        None if args.show else os.path.join(args.output_dir, f"review_category_lifecycle_impact{date_suffix}.png"))
     
     if not args.show:
         print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")

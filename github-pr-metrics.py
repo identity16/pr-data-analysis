@@ -7,10 +7,17 @@ import time
 import os
 import numpy as np
 from dateutil.parser import parse
+from dotenv import load_dotenv
+# 코드 리뷰 분류기 모듈 임포트
+import code_review_classifier
+
+# .env 파일 로드
+load_dotenv()
 
 # GitHub API 상수
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # 환경 변수에서 토큰 가져오기
+API_WAIT_TIME = float(os.environ.get("API_WAIT_TIME", "0.5"))  # API 요청 간 대기 시간
 
 def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None, since=None, until=None, created_since=None):
     """
@@ -234,8 +241,8 @@ def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None, si
             break
             
         # GitHub API 속도 제한 준수
-        print("[로그] API 속도 제한 준수를 위해 0.5초 대기")
-        time.sleep(0.5)
+        print(f"[로그] API 속도 제한 준수를 위해 {API_WAIT_TIME}초 대기")
+        time.sleep(API_WAIT_TIME)
     
     print(f"[로그] 총 {len(pull_requests)}개의 PR을 가져왔습니다.")
     return pull_requests
@@ -490,6 +497,10 @@ def calculate_pr_metrics(owner, repo, pull_requests):
         else:
             outcome = "Open"
         
+        # 코드 리뷰 분류 수행
+        print(f"PR #{pr_number}의 코드 리뷰 분류 중...")
+        review_classification_metrics = code_review_classifier.get_review_classification_metrics(reviews, comments)
+        
         # 메트릭 딕셔너리 생성
         metrics = {
             "pr_number": pr_number,
@@ -522,7 +533,9 @@ def calculate_pr_metrics(owner, repo, pull_requests):
             "comment_author_count": comment_author_count,
             "commit_count": commit_count,
             "review_iterations": review_iterations,
-            "outcome": outcome
+            "outcome": outcome,
+            # 코드 리뷰 분류 메트릭 추가
+            **review_classification_metrics
         }
         
         metrics_data.append(metrics)
@@ -556,8 +569,15 @@ def main():
     parser.add_argument("--start-date", help="시작 날짜 (YYYY-MM-DD 형식) - PR 생성 날짜 기준")
     parser.add_argument("--end-date", help="종료 날짜 (YYYY-MM-DD 형식) - PR 생성 날짜 기준")
     parser.add_argument("--updated-since", help="이 날짜 이후에 업데이트된 PR만 가져옵니다 (YYYY-MM-DD 형식)")
+    parser.add_argument("--classify-reviews", action="store_true", help="코드 리뷰 분류 활성화 (OpenAI API 키 필요)")
     
     args = parser.parse_args()
+    
+    # OpenAI API 키 확인
+    if args.classify_reviews and not os.environ.get("OPENAI_API_KEY"):
+        print("경고: OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+        print("코드 리뷰 분류를 사용하려면 OpenAI API 키를 설정하세요.")
+        print("예: export OPENAI_API_KEY='your-api-key'")
     
     # max_prs 기반으로 max_pages 계산
     max_pages = None
@@ -620,6 +640,20 @@ def main():
     print(f"PR당 평균 리뷰 수: {df['review_count'].mean():.1f}")
     print(f"PR당 평균 코멘트 수: {df['comment_count'].mean():.1f}")
     print(f"PR당 평균 승인 리뷰어 수: {df['approved_reviewers'].apply(len).mean():.1f}")
+    
+    # 코드 리뷰 분류 통계 출력
+    print("\n코드 리뷰 분류 통계:")
+    review_category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    if review_category_columns:
+        for col in review_category_columns:
+            # 카테고리 이름 추출 및 포맷팅
+            category_name = col.replace('review_category_', '').replace('_', ' ')
+            category_name = ' '.join(word.capitalize() for word in category_name.split())
+            total_count = df[col].sum()
+            avg_per_pr = df[col].mean()
+            print(f"{category_name}: 총 {total_count}개 (PR당 평균 {avg_per_pr:.1f}개)")
+    else:
+        print("코드 리뷰 분류 데이터가 없습니다.")
 
 if __name__ == "__main__":
     main()
