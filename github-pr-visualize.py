@@ -1249,7 +1249,7 @@ def plot_review_category_correlation(df, output_file=None):
     # 그래프 그리기
     nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='lightblue', alpha=0.8)
     nx.draw_networkx_edges(G, pos, width=weights, edge_color=colors, alpha=0.7)
-    nx.draw_networkx_labels(G, pos, font_size=10, font_family='sans-serif')
+    nx.draw_networkx_labels(G, pos, font_size=10, font_family=plt.rcParams['font.family'])
     
     # 범례 추가
     from matplotlib.lines import Line2D
