@@ -972,12 +972,25 @@ def plot_pr_complexity_metrics(df, output_file=None):
 
 def plot_review_category_distribution(df, output_file=None):
     """코드 리뷰 카테고리 분포를 시각화합니다."""
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(14, 7))
     
     # 리뷰 카테고리 컬럼 추출
     category_columns = [col for col in df.columns if col.startswith('review_category_')]
     
-    # 카테고리별 총합 계산
+    # 카테고리 컬럼이 없는 경우 처리
+    if not category_columns:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 없습니다.\n\n--classify-reviews 옵션을 사용하여 PR 메트릭을 생성해야 합니다.\n예: python github-pr-metrics.py 소유자 저장소 --classify-reviews', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+    
+    # 각 카테고리별 합계 계산
     category_sums = {}
     for col in category_columns:
         # 컬럼 이름에서 'review_category_' 접두사 제거하고 언더스코어를 공백으로 변환
@@ -986,6 +999,19 @@ def plot_review_category_distribution(df, output_file=None):
     
     # 합계가 0인 카테고리 제거
     category_sums = {k: v for k, v in category_sums.items() if v > 0}
+    
+    # 데이터가 없는 경우 처리
+    if not category_sums:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 모두 0입니다.\n\n리뷰 분류가 제대로 수행되지 않았을 수 있습니다.\nOPENAI_API_KEY 환경 변수가 설정되어 있는지 확인하세요.', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
     
     # 내림차순으로 정렬
     sorted_categories = dict(sorted(category_sums.items(), key=lambda item: item[1], reverse=True))
@@ -1019,6 +1045,19 @@ def plot_review_category_trend(df, output_file=None):
     # 리뷰 카테고리 컬럼 추출
     category_columns = [col for col in df.columns if col.startswith('review_category_')]
     
+    # 카테고리 컬럼이 없는 경우 처리
+    if not category_columns:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 없습니다.\n\n--classify-reviews 옵션을 사용하여 PR 메트릭을 생성해야 합니다.\n예: python github-pr-metrics.py 소유자 저장소 --classify-reviews', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+    
     # 날짜별로 그룹화
     df_grouped = df.groupby('created_at_date')[category_columns].sum()
     
@@ -1027,6 +1066,20 @@ def plot_review_category_trend(df, output_file=None):
     
     # 합계가 0인 카테고리 제거
     non_zero_columns = [col for col in df_grouped.columns if df_grouped[col].sum() > 0]
+    
+    # 데이터가 없는 경우 처리
+    if not non_zero_columns:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 모두 0입니다.', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+    
     df_grouped = df_grouped[non_zero_columns]
     
     # 시간에 따른 트렌드 그래프 그리기
@@ -1059,15 +1112,28 @@ def plot_review_category_trend(df, output_file=None):
 
 def plot_review_category_by_pr_size(df, output_file=None):
     """PR 크기별 코드 리뷰 카테고리 분포를 시각화합니다."""
-    plt.figure(figsize=(14, 10))
-    
-    # PR 크기 구간 정의
-    df['size_category'] = pd.cut(df['pr_size'], 
-                                    bins=[0, 50, 200, 500, 1000, float('inf')],
-                                    labels=['매우 작음 (< 50)', '작음 (50-200)', '중간 (200-500)', '큼 (500-1000)', '매우 큼 (> 1000)'])
+    plt.figure(figsize=(14, 8))
     
     # 리뷰 카테고리 컬럼 추출
     category_columns = [col for col in df.columns if col.startswith('review_category_')]
+    
+    # 카테고리 컬럼이 없는 경우 처리
+    if not category_columns:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 없습니다.\n\n--classify-reviews 옵션을 사용하여 PR 메트릭을 생성해야 합니다.\n예: python github-pr-metrics.py 소유자 저장소 --classify-reviews', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+        
+    # PR 크기 구간 정의
+    df['size_category'] = pd.cut(df['pr_size'], 
+                                 bins=[0, 50, 200, 500, 1000, float('inf')],
+                                 labels=['매우 작음 (< 50)', '작음 (50-200)', '중간 (200-500)', '큼 (500-1000)', '매우 큼 (> 1000)'])
     
     # 컬럼 이름 변환 함수
     def clean_category_name(col):
@@ -1078,6 +1144,19 @@ def plot_review_category_by_pr_size(df, output_file=None):
     
     # 합계가 0인 카테고리 제거
     non_zero_columns = [col for col in category_columns if df[col].sum() > 0]
+    
+    # 데이터가 없는 경우 처리
+    if not non_zero_columns:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 모두 0입니다.', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
     
     # 히트맵 생성
     plt.subplot(2, 1, 1)
@@ -1186,93 +1265,48 @@ def plot_review_category_correlation(df, output_file=None):
     # 리뷰 카테고리 컬럼 추출
     category_columns = [col for col in df.columns if col.startswith('review_category_')]
     
+    # 카테고리 컬럼이 없는 경우 처리
+    if not category_columns:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 없습니다.\n\n--classify-reviews 옵션을 사용하여 PR 메트릭을 생성해야 합니다.\n예: python github-pr-metrics.py 소유자 저장소 --classify-reviews', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+    
+    # 카테고리 데이터만 추출
+    category_df = df[category_columns]
+    
+    # 모든 값이 0인 경우 처리
+    if category_df.sum().sum() == 0:
+        plt.text(0.5, 0.5, '코드 리뷰 카테고리 데이터가 모두 0입니다.\n\n리뷰 분류가 제대로 수행되지 않았을 수 있습니다.\nOPENAI_API_KEY 환경 변수가 설정되어 있는지 확인하세요.', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+        
     # 합계가 0인 카테고리 제거
     non_zero_columns = [col for col in category_columns if df[col].sum() > 0]
     
     if len(non_zero_columns) < 2:
-        print("경고: 상관관계 분석을 위한 충분한 카테고리 데이터가 없습니다.")
-        return
-    
-    # 카테고리 데이터 추출
-    category_data = df[non_zero_columns].copy()
-    
-    # 컬럼 이름 변환
-    category_data.columns = [col.replace('review_category_', '').replace('_', ' ') for col in category_data.columns]
-    
-    # 상관관계 계산
-    correlation = category_data.corr()
-    
-    # 히트맵 생성
-    plt.subplot(2, 1, 1)
-    sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
-    plt.title('코드 리뷰 카테고리 간 상관관계')
-    
-    # 네트워크 그래프 생성을 위한 데이터 준비
-    plt.subplot(2, 1, 2)
-    
-    # 상관관계 행렬을 그래프로 변환
-    G = nx.Graph()
-    
-    # 노드 추가
-    for category in correlation.columns:
-        G.add_node(category)
-    
-    # 엣지 추가 (임계값 이상의 상관관계만)
-    for i, cat1 in enumerate(correlation.columns):
-        for j, cat2 in enumerate(correlation.columns):
-            if i < j:  # 중복 방지
-                corr_value = correlation.iloc[i, j]
-                if abs(corr_value) >= 0.1:
-                    G.add_edge(cat1, cat2, weight=abs(corr_value), color='red' if corr_value < 0 else 'blue')
-    
-    # 노드 위치 계산
-    pos = nx.spring_layout(G, seed=42)
-    
-    # 엣지 가중치와 색상
-    edges = G.edges()
-    weights = [G[u][v]['weight'] * 5 for u, v in edges]  # 선 굵기 조정
-    colors = [G[u][v]['color'] for u, v in edges]
-    
-    # 노드 크기 계산 (카테고리별 리뷰 수에 비례)
-    node_sizes = [category_data[node].sum() * 100 for node in G.nodes()]
-    
-    # 그래프 그리기
-    nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='lightblue', alpha=0.8)
-    nx.draw_networkx_edges(G, pos, width=weights, edge_color=colors, alpha=0.7)
-    nx.draw_networkx_labels(G, pos, font_size=10, font_family=plt.rcParams['font.family'])
-    
-    # 범례 추가
-    from matplotlib.lines import Line2D
-    legend_elements = [
-        Line2D([0], [0], color='blue', lw=2, label='양의 상관관계'),
-        Line2D([0], [0], color='red', lw=2, label='음의 상관관계')
-    ]
-    plt.legend(handles=legend_elements, loc='upper right')
-    
-    plt.title('코드 리뷰 카테고리 간 관계 네트워크')
-    plt.axis('off')  # 축 제거
-    
-    plt.tight_layout()
-    
-    # 파일로 저장하거나 화면에 표시
-    if output_file:
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        plt.close()
-    else:
-        plt.show()
-
-def plot_review_category_by_outcome(df, output_file=None):
-    """PR 결과(Merged, Closed, Open)와 코드 리뷰 카테고리 간의 관계를 시각화합니다."""
-    plt.figure(figsize=(14, 10))
-    
-    # 리뷰 카테고리 컬럼 추출
-    category_columns = [col for col in df.columns if col.startswith('review_category_')]
-    
-    # 합계가 0인 카테고리 제거
-    non_zero_columns = [col for col in category_columns if df[col].sum() > 0]
-    
-    if not non_zero_columns:
-        print("경고: 분석을 위한 코드 리뷰 카테고리 데이터가 없습니다.")
+        plt.text(0.5, 0.5, '상관관계 분석을 위한 충분한 카테고리 데이터가 없습니다.\n\n최소 2개 이상의 카테고리가 필요합니다.', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
         return
     
     # PR 결과별로 그룹화
@@ -1398,6 +1432,81 @@ def plot_review_category_lifecycle_impact(df, output_file=None):
     else:
         plt.show()
 
+def plot_review_thread_analysis(df, output_file=None):
+    """스레드 기반 코드 리뷰 분석 결과를 시각화합니다."""
+    plt.figure(figsize=(14, 10))
+    
+    # 필요한 컬럼이 있는지 확인
+    if 'review_thread_count' not in df.columns or 'review_total_items' not in df.columns:
+        plt.text(0.5, 0.5, '스레드 분석 데이터가 없습니다.\n\n--classify-reviews 옵션을 사용하여 PR 메트릭을 생성해야 합니다.\n예: python github-pr-metrics.py 소유자 저장소 --classify-reviews', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+    
+    # 데이터가 모두 0인지 확인
+    if df['review_thread_count'].sum() == 0 and df['review_total_items'].sum() == 0:
+        plt.text(0.5, 0.5, '스레드 분석 데이터가 모두 0입니다.', 
+                 horizontalalignment='center', verticalalignment='center', 
+                 transform=plt.gca().transAxes, fontsize=14)
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+        else:
+            plt.show()
+        return
+    
+    # 1. 스레드 vs 개별 코멘트 비율
+    plt.subplot(2, 2, 1)
+    thread_count = df['review_thread_count'].sum()
+    total_items = df['review_total_items'].sum()
+    single_comments = total_items - thread_count
+    
+    labels = ['스레드 분류', '개별 코멘트 분류']
+    sizes = [thread_count, single_comments]
+    colors = ['#ff9999', '#66b3ff']
+    
+    plt.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90, shadow=True)
+    plt.axis('equal')
+    plt.title('스레드 vs 개별 코멘트 분류 비율')
+    
+    # 2. PR별 스레드 수 분포
+    plt.subplot(2, 2, 2)
+    thread_counts = df['review_thread_count']
+    plt.hist(thread_counts, bins=10, color='skyblue', edgecolor='black')
+    plt.xlabel('PR별 스레드 수')
+    plt.ylabel('PR 수')
+    plt.title('PR별 스레드 수 분포')
+    
+    # 3. PR 크기와 스레드 수 관계
+    plt.subplot(2, 2, 3)
+    plt.scatter(df['pr_size'], df['review_thread_count'], alpha=0.6)
+    plt.xlabel('PR 크기 (변경된 라인 수)')
+    plt.ylabel('스레드 수')
+    plt.title('PR 크기와 스레드 수 관계')
+    
+    # 4. 스레드 수와 PR 처리 시간 관계
+    plt.subplot(2, 2, 4)
+    plt.scatter(df['review_thread_count'], df['pr_duration_hours'], alpha=0.6)
+    plt.xlabel('스레드 수')
+    plt.ylabel('PR 처리 시간 (시간)')
+    plt.title('스레드 수와 PR 처리 시간 관계')
+    
+    plt.tight_layout()
+    
+    # 파일로 저장하거나 화면에 표시
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+    else:
+        plt.show()
+
 def main():
     parser = argparse.ArgumentParser(description='GitHub PR 데이터 시각화')
     parser.add_argument('input_file', help='PR 지표가 포함된 CSV 파일')
@@ -1465,26 +1574,43 @@ def main():
     # 새로 추가된 코드 리뷰 카테고리 시각화
     print("코드 리뷰 카테고리 시각화 차트 생성 중...")
     
-    plot_review_category_distribution(df,
-        os.path.join(args.output_dir, "review_category_distribution.png"))
+    try:
+        # 카테고리 컬럼이 있는지 확인
+        category_columns = [col for col in df.columns if col.startswith('review_category_')]
+        if not category_columns:
+            print("코드 리뷰 카테고리 데이터가 없습니다. --classify-reviews 옵션을 사용하여 PR 메트릭을 생성해야 합니다.")
+        else:
+            plot_review_category_distribution(df,
+                os.path.join(args.output_dir, "review_category_distribution.png"))
+            
+            plot_review_category_trend(df,
+                os.path.join(args.output_dir, "review_category_trend.png"))
+            
+            plot_review_category_by_pr_size(df,
+                os.path.join(args.output_dir, "review_category_by_pr_size.png"))
+            
+            plot_review_category_by_reviewer(df,
+                os.path.join(args.output_dir, "review_category_by_reviewer.png"))
+            
+            plot_review_category_correlation(df,
+                os.path.join(args.output_dir, "review_category_correlation.png"))
+            
+            plot_review_category_by_outcome(df,
+                os.path.join(args.output_dir, "review_category_by_outcome.png"))
+            
+            plot_review_category_lifecycle_impact(df,
+                os.path.join(args.output_dir, "review_category_lifecycle_impact.png"))
+    except Exception as e:
+        print(f"코드 리뷰 카테고리 시각화 중 오류 발생: {e}")
+        print("일부 차트가 생성되지 않았을 수 있습니다.")
     
-    plot_review_category_trend(df,
-        os.path.join(args.output_dir, "review_category_trend.png"))
-    
-    plot_review_category_by_pr_size(df,
-        os.path.join(args.output_dir, "review_category_by_pr_size.png"))
-    
-    plot_review_category_by_reviewer(df,
-        os.path.join(args.output_dir, "review_category_by_reviewer.png"))
-    
-    plot_review_category_correlation(df,
-        os.path.join(args.output_dir, "review_category_correlation.png"))
-    
-    plot_review_category_by_outcome(df,
-        os.path.join(args.output_dir, "review_category_by_outcome.png"))
-    
-    plot_review_category_lifecycle_impact(df,
-        os.path.join(args.output_dir, "review_category_lifecycle_impact.png"))
+    print("스레드 기반 분석 차트 생성 중...")
+    try:
+        plot_review_thread_analysis(df,
+            os.path.join(args.output_dir, "review_thread_analysis.png"))
+    except Exception as e:
+        print(f"스레드 기반 분석 시각화 중 오류 발생: {e}")
+        print("스레드 분석 차트가 생성되지 않았을 수 있습니다.")
     
     print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")
 

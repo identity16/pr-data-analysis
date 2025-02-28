@@ -10,6 +10,9 @@ from dateutil.parser import parse
 from dotenv import load_dotenv
 # 코드 리뷰 분류기 모듈 임포트
 import code_review_classifier
+import logging
+import random
+from requests.exceptions import ConnectionError, Timeout, HTTPError
 
 # .env 파일 로드
 load_dotenv()
@@ -18,6 +21,52 @@ load_dotenv()
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # 환경 변수에서 토큰 가져오기
 API_WAIT_TIME = float(os.environ.get("API_WAIT_TIME", "0.5"))  # API 요청 간 대기 시간
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))  # 최대 재시도 횟수
+
+def make_github_api_request(url, headers, params=None):
+    """
+    GitHub API 요청을 수행하고 재시도 메커니즘을 구현합니다.
+    
+    매개변수:
+    - url: API 요청 URL
+    - headers: 요청 헤더
+    - params: 요청 매개변수 (선택 사항)
+    
+    반환값:
+    - API 응답 (JSON)
+    """
+    retries = 0
+    while retries < MAX_RETRIES:
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()  # 4xx, 5xx 오류 발생 시 예외 발생
+            return response.json()
+        except (ConnectionError, Timeout) as e:
+            retries += 1
+            wait_time = API_WAIT_TIME * (2 ** retries) + random.uniform(0, 1)  # 지수 백오프 + 무작위성
+            print(f"네트워크 오류 발생: {e}. {wait_time:.2f}초 후 재시도 ({retries}/{MAX_RETRIES})...")
+            time.sleep(wait_time)
+        except HTTPError as e:
+            if response.status_code == 403 and 'rate limit exceeded' in response.text.lower():
+                # API 속도 제한에 도달한 경우
+                reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
+                current_time = int(time.time())
+                wait_seconds = max(reset_time - current_time, 0) + 5  # 5초 추가 여유
+                
+                print(f"GitHub API 속도 제한에 도달했습니다. {wait_seconds}초 후 재시도합니다.")
+                time.sleep(wait_seconds)
+                retries += 1
+            elif response.status_code == 404:
+                print(f"리소스를 찾을 수 없습니다: {url}")
+                return {}
+            else:
+                retries += 1
+                wait_time = API_WAIT_TIME * (2 ** retries)
+                print(f"HTTP 오류 발생: {e}. {wait_time:.2f}초 후 재시도 ({retries}/{MAX_RETRIES})...")
+                time.sleep(wait_time)
+    
+    print(f"최대 재시도 횟수({MAX_RETRIES})에 도달했습니다. 요청 실패: {url}")
+    return {}
 
 def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None, since=None, until=None, created_since=None):
     """
@@ -131,14 +180,13 @@ def get_pull_requests(owner, repo, state="all", per_page=100, max_pages=None, si
         print(f"[로그] API 요청: {url} (페이지 {page})")
         print(f"[로그] 요청 매개변수: {params}")
         
-        response = requests.get(url, headers=headers, params=params)
+        # 재시도 메커니즘이 포함된 API 요청 수행
+        page_data = make_github_api_request(url, headers, params)
         
-        if response.status_code != 200:
-            print(f"[로그] API 오류: {response.status_code} - {response.text}")
-            print(f"PR 가져오기 오류: {response.status_code} - {response.text}")
+        if not page_data:
+            print(f"[로그] 페이지 {page}에서 데이터를 가져오지 못했습니다. 페이징을 중단합니다.")
             break
         
-        page_data = response.json()
         print(f"[로그] 페이지 {page}에서 {len(page_data)}개의 PR을 가져왔습니다.")
         
         if not page_data:
@@ -267,16 +315,14 @@ def get_pr_reviews(owner, repo, pr_number):
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
     
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
-    response = requests.get(url, headers=headers)
     
-    if response.status_code != 200:
-        print(f"PR #{pr_number}의 리뷰 가져오기 오류: {response.status_code} - {response.text}")
-        return []
+    # 재시도 메커니즘이 포함된 API 요청 수행
+    reviews = make_github_api_request(url, headers)
     
     # GitHub API 속도 제한 준수
-    time.sleep(0.5)
+    time.sleep(API_WAIT_TIME)
     
-    return response.json()
+    return reviews
 
 def get_pr_comments(owner, repo, pr_number):
     """
@@ -298,16 +344,14 @@ def get_pr_comments(owner, repo, pr_number):
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
     
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/comments"
-    response = requests.get(url, headers=headers)
     
-    if response.status_code != 200:
-        print(f"PR #{pr_number}의 코멘트 가져오기 오류: {response.status_code} - {response.text}")
-        return []
+    # 재시도 메커니즘이 포함된 API 요청 수행
+    comments = make_github_api_request(url, headers)
     
     # GitHub API 속도 제한 준수
-    time.sleep(0.5)
+    time.sleep(API_WAIT_TIME)
     
-    return response.json()
+    return comments
 
 def get_pr_commits(owner, repo, pr_number):
     """
@@ -329,16 +373,14 @@ def get_pr_commits(owner, repo, pr_number):
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
     
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}/commits"
-    response = requests.get(url, headers=headers)
     
-    if response.status_code != 200:
-        print(f"PR #{pr_number}의 커밋 가져오기 오류: {response.status_code} - {response.text}")
-        return []
+    # 재시도 메커니즘이 포함된 API 요청 수행
+    commits = make_github_api_request(url, headers)
     
     # GitHub API 속도 제한 준수
-    time.sleep(0.5)
+    time.sleep(API_WAIT_TIME)
     
-    return response.json()
+    return commits
 
 def get_pr_details(owner, repo, pr_number):
     """
@@ -360,18 +402,16 @@ def get_pr_details(owner, repo, pr_number):
         headers["Authorization"] = f"token {GITHUB_TOKEN}"
     
     url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/pulls/{pr_number}"
-    response = requests.get(url, headers=headers)
     
-    if response.status_code != 200:
-        print(f"PR #{pr_number}의 세부 정보 가져오기 오류: {response.status_code} - {response.text}")
-        return {}
+    # 재시도 메커니즘이 포함된 API 요청 수행
+    pr_details = make_github_api_request(url, headers)
     
     # GitHub API 속도 제한 준수
-    time.sleep(0.5)
+    time.sleep(API_WAIT_TIME)
     
-    return response.json()
+    return pr_details
 
-def calculate_pr_metrics(owner, repo, pull_requests):
+def calculate_pr_metrics(owner, repo, pull_requests, classify_reviews=False):
     """
     각 Pull Request의 메트릭을 계산합니다.
     
@@ -379,6 +419,7 @@ def calculate_pr_metrics(owner, repo, pull_requests):
     - owner: 저장소 소유자
     - repo: 저장소 이름
     - pull_requests: Pull Request 데이터 목록
+    - classify_reviews: 코드 리뷰 분류 활성화 여부
     
     반환값:
     - PR 메트릭이 포함된 DataFrame
@@ -498,9 +539,14 @@ def calculate_pr_metrics(owner, repo, pull_requests):
             outcome = "Open"
         
         # 코드 리뷰 분류 수행
-        print(f"PR #{pr_number}의 코드 리뷰 분류 중...")
-        review_classification_metrics = code_review_classifier.get_review_classification_metrics(reviews, comments)
-        
+        logging.info(f"PR #{pr_number}: 코드 리뷰 분류 수행 중...")
+        review_metrics = {}
+        if classify_reviews:
+            review_metrics = code_review_classifier.get_review_classification_metrics(reviews, comments)
+            logging.info(f"PR #{pr_number}: 코드 리뷰 분류 완료")
+        else:
+            logging.info(f"PR #{pr_number}: 코드 리뷰 분류 비활성화됨")
+
         # 메트릭 딕셔너리 생성
         metrics = {
             "pr_number": pr_number,
@@ -519,24 +565,27 @@ def calculate_pr_metrics(owner, repo, pull_requests):
             "deletions": deletions,
             "changed_files": changed_files,
             "pr_size": pr_size,
+            "comment_count": comment_count,
             "review_count": review_count,
-            "reviewer_count": reviewer_count,
+            "comments_reviews": comments_reviews,
+            "comments_author": comment_author_count,
             "reviewers": list(reviewers),
+            "reviewer_count": reviewer_count,
             "approved_reviewers": list(approved_reviewers),
             "requested_changes_reviewers": list(requested_changes_reviewers),
-            "approvals": approvals,
-            "rejections": rejections,
-            "comments_reviews": comments_reviews,
-            "time_to_first_review_hours": time_to_first_review,
-            "comment_count": comment_count,
-            "comment_authors": list(comment_authors),
-            "comment_author_count": comment_author_count,
-            "commit_count": commit_count,
             "review_iterations": review_iterations,
+            "time_to_first_review_hours": time_to_first_review,
             "outcome": outcome,
-            # 코드 리뷰 분류 메트릭 추가
-            **review_classification_metrics
+            # 스레드 기반 분류 결과 추가
+            "review_thread_count": review_metrics.get('review_thread_count', 0),
+            "review_reclassified_count": review_metrics.get('review_reclassified_count', 0),
+            "review_total_items": review_metrics.get('review_total_items', 0),
         }
+        
+        # 코드 리뷰 카테고리 메트릭 추가
+        for key, value in review_metrics.items():
+            if key.startswith('review_category_'):
+                metrics[key] = value
         
         metrics_data.append(metrics)
     
@@ -621,7 +670,7 @@ def main():
     
     # 메트릭 계산
     print("PR 메트릭 계산 중...")
-    df = calculate_pr_metrics(args.owner, args.repo, pull_requests)
+    df = calculate_pr_metrics(args.owner, args.repo, pull_requests, args.classify_reviews)
     
     # 파일로 저장
     df.to_csv(args.output, index=False)

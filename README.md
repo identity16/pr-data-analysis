@@ -23,11 +23,19 @@ pip install -r requirements.txt
 `.env` 파일을 프로젝트 루트 디렉토리에 생성하고 다음과 같이 설정합니다:
 
 ```
-# GitHub 토큰 (선택 사항이지만 API 속도 제한을 높이기 위해 권장)
-GITHUB_TOKEN=your-github-token
+# GitHub API 토큰
+GITHUB_TOKEN=your_github_token_here
 
-# 코드 리뷰 분류를 위한 OpenAI API 설정 (선택 사항)
-OPENAI_API_KEY=your-openai-api-key
+# API 요청 간 대기 시간 (초, 기본값: 0.5)
+API_WAIT_TIME=0.5
+
+# 재시도 설정
+MAX_RETRIES=3
+
+# OpenAI API 키 (코드 리뷰 분류 기능 사용 시 필요)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# OpenAI 모델 (기본값: gpt-3.5-turbo)
 OPENAI_MODEL=gpt-3.5-turbo
 ```
 
@@ -99,4 +107,12 @@ python github-pr-metrics.py microsoft vscode --state closed --max-prs 100 --star
 
 - GitHub API는 속도 제한이 있습니다. 토큰을 사용하면 제한이 높아집니다.
 - 대량의 PR을 처리할 때는 `--max-prs` 옵션을 사용하여 처리할 PR 수를 제한하는 것이 좋습니다.
-- 코드 리뷰 분류 기능을 사용하려면 OpenAI API 키가 필요하며, API 사용에 따른 비용이 발생할 수 있습니다. 
+- 코드 리뷰 분류 기능을 사용하려면 OpenAI API 키가 필요하며, API 사용에 따른 비용이 발생할 수 있습니다.
+
+### 네트워크 오류 처리
+
+이 스크립트는 GitHub API 요청 시 발생할 수 있는 네트워크 오류를 처리하기 위한 재시도 메커니즘을 포함하고 있습니다:
+
+- 연결 오류 또는 타임아웃 발생 시 지수 백오프(exponential backoff) 방식으로 재시도합니다.
+- API 속도 제한에 도달한 경우 제한이 해제될 때까지 대기한 후 재시도합니다.
+- 최대 재시도 횟수는 `MAX_RETRIES` 환경 변수로 설정할 수 있습니다(기본값: 3). 

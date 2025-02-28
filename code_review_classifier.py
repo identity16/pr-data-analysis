@@ -287,6 +287,82 @@ def save_classification_to_json(comment_id: str, comment_text: str, classificati
     except Exception as e:
         logger.error(f"[{comment_id}] JSON 파일 저장 오류: {e}")
 
+def classify_thread_comments(thread_comments: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    동일 스레드의 코멘트들을 묶어서 분류합니다.
+    
+    매개변수:
+    - thread_comments: 동일 스레드에 속한 코멘트 목록
+    
+    반환값:
+    - 스레드 전체에 대한 분류 결과를 포함하는 딕셔너리
+    """
+    if not thread_comments:
+        return {"category": "미분류", "confidence": 0.0}
+    
+    # 스레드의 모든 코멘트를 하나의 텍스트로 결합
+    thread_text = "\n\n".join([f"[{comment['user']['login']}]: {comment['body']}" for comment in thread_comments])
+    thread_id = f"thread_{thread_comments[0]['id']}"
+    
+    logger.info(f"[{thread_id}] 스레드 분류 시작: {len(thread_comments)}개 코멘트")
+    
+    # 결합된 텍스트를 분류
+    classification = classify_review_comment(thread_text, thread_id)
+    
+    return classification
+
+def organize_comments_by_thread(comments: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """
+    코멘트를 스레드별로 구성합니다.
+    
+    매개변수:
+    - comments: PR 코멘트 목록
+    
+    반환값:
+    - 스레드별로 구성된 코멘트 목록의 목록
+    """
+    # 코멘트 ID를 키로 하는 딕셔너리 생성
+    comment_dict = {str(comment["id"]): comment for comment in comments}
+    
+    # 스레드 루트 코멘트 (in_reply_to_id가 없는 코멘트) 식별
+    root_comments = []
+    reply_comments = []
+    
+    for comment in comments:
+        if comment.get("in_reply_to_id") is None:
+            root_comments.append(comment)
+        else:
+            reply_comments.append(comment)
+    
+    # 스레드별로 코멘트 구성
+    threads = []
+    
+    # 루트 코멘트를 기준으로 스레드 구성
+    for root in root_comments:
+        thread = [root]
+        root_id = str(root["id"])
+        
+        # 이 루트에 대한 답글 찾기
+        for reply in reply_comments:
+            if str(reply.get("in_reply_to_id")) == root_id:
+                thread.append(reply)
+        
+        threads.append(thread)
+    
+    # 루트가 없는 답글 처리 (API 응답에 루트 코멘트가 포함되지 않은 경우)
+    remaining_replies = []
+    for reply in reply_comments:
+        reply_to_id = str(reply.get("in_reply_to_id"))
+        if reply_to_id not in comment_dict:
+            remaining_replies.append(reply)
+    
+    # 남은 답글을 개별 스레드로 처리
+    for reply in remaining_replies:
+        threads.append([reply])
+    
+    logger.info(f"총 {len(comments)}개 코멘트를 {len(threads)}개 스레드로 구성했습니다.")
+    return threads
+
 def classify_pr_reviews(reviews: List[Dict[str, Any]], comments: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     PR의 모든 리뷰와 코멘트를 분류하고 통계를 계산합니다.
@@ -317,36 +393,70 @@ def classify_pr_reviews(reviews: List[Dict[str, Any]], comments: List[Dict[str, 
                 "classification": classification
             })
     
-    # 코멘트 분류
-    for comment in comments:
-        if comment.get("body") and comment.get("body").strip():
-            comment_id = str(comment["id"])
-            logger.info(f"코멘트 분류 시작 (ID: {comment_id}, 사용자: {comment['user']['login']})")
-            classification = classify_review_comment(comment["body"], f"comment_{comment_id}")
+    # 코멘트를 스레드별로 구성
+    comment_threads = organize_comments_by_thread(comments)
+    
+    # 스레드별 분류
+    for thread in comment_threads:
+        if not thread:
+            continue
+            
+        thread_id = str(thread[0]["id"])
+        
+        # 스레드에 코멘트가 하나만 있는 경우 개별 분류
+        if len(thread) == 1:
+            comment = thread[0]
+            if comment.get("body") and comment.get("body").strip():
+                logger.info(f"단일 코멘트 분류 시작 (ID: {thread_id}, 사용자: {comment['user']['login']})")
+                classification = classify_review_comment(comment["body"], f"comment_{thread_id}")
+                classifications.append({
+                    "type": "comment",
+                    "id": thread_id,
+                    "user": comment["user"]["login"],
+                    "text": comment["body"],
+                    "classification": classification,
+                    "thread_size": 1
+                })
+        # 스레드에 여러 코멘트가 있는 경우 스레드 전체 분류
+        else:
+            logger.info(f"스레드 분류 시작 (루트 ID: {thread_id}, 코멘트 수: {len(thread)})")
+            classification = classify_thread_comments(thread)
+            
+            # 스레드의 모든 사용자 목록
+            users = list(set(comment["user"]["login"] for comment in thread))
+            
+            # 스레드의 모든 텍스트 결합
+            thread_text = "\n\n".join([f"[{comment['user']['login']}]: {comment['body']}" for comment in thread])
+            
             classifications.append({
-                "type": "comment",
-                "id": comment_id,
-                "user": comment["user"]["login"],
-                "text": comment["body"],
-                "classification": classification
+                "type": "thread",
+                "id": thread_id,
+                "users": users,
+                "text": thread_text,
+                "classification": classification,
+                "thread_size": len(thread)
             })
     
     # 카테고리별 통계 계산
     category_counts = {category: 0 for category in REVIEW_CATEGORIES}
     category_counts["미분류"] = 0
     reclassified_count = 0
+    thread_count = 0
     
     for item in classifications:
         category = item["classification"].get("category", "미분류")
         category_counts[category] = category_counts.get(category, 0) + 1
         if item["classification"].get("was_reclassified", False):
             reclassified_count += 1
+        if item["type"] == "thread" and item.get("thread_size", 0) > 1:
+            thread_count += 1
     
     # 통계 로깅
     logger.info("분류 통계:")
     for category, count in category_counts.items():
         logger.info(f"  - {category}: {count}개")
     logger.info(f"재분류된 항목: {reclassified_count}개")
+    logger.info(f"스레드로 분류된 항목: {thread_count}개")
     
     # 전체 분류 결과를 JSON 파일로 저장
     save_all_classifications_to_json(classifications, category_counts)
@@ -356,7 +466,8 @@ def classify_pr_reviews(reviews: List[Dict[str, Any]], comments: List[Dict[str, 
         "classifications": classifications,
         "category_counts": category_counts,
         "total_classified_items": len(classifications),
-        "reclassified_count": reclassified_count
+        "reclassified_count": reclassified_count,
+        "thread_count": thread_count
     }
 
 def save_all_classifications_to_json(classifications: List[Dict[str, Any]], category_counts: Dict[str, int]):
@@ -419,6 +530,10 @@ def get_review_classification_metrics(reviews: List[Dict[str, Any]], comments: L
     
     # 재분류 정보 추가
     metrics["review_reclassified_count"] = classification_results.get("reclassified_count", 0)
+    
+    # 스레드 정보 추가
+    metrics["review_thread_count"] = classification_results.get("thread_count", 0)
+    metrics["review_total_items"] = classification_results.get("total_classified_items", 0)
     
     logger.info("PR 리뷰 분류 메트릭 계산 완료")
     return metrics
