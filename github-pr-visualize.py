@@ -7,6 +7,10 @@ import argparse
 import os
 import platform
 import matplotlib.font_manager as fm
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 # 한글 폰트 설정
 def set_korean_font():
@@ -1504,12 +1508,149 @@ def plot_review_thread_analysis(df, output_file=None):
     else:
         plt.show()
 
+def plot_contributor_distribution(df, output_file=None, internal_contributors=None):
+    """
+    내부 기여자와 외부 기여자의 PR 기여 현황을 분석하여 4가지 차트로 시각화합니다.
+    
+    시각화 내용:
+    1. 내부/외부 기여자 PR 비율 (파이 차트)
+    2. 일별 내부/외부 기여자 PR 추이 (누적 막대 그래프)
+    3. 기여자 유형별 PR 크기 분포 (박스플롯)
+    4. 기여자 유형별 PR 처리 시간 분포 - 병합된 PR 대상 (박스플롯)
+    
+    매개변수:
+    - df: PR 데이터가 포함된 DataFrame
+        필수 컬럼:
+        - pr_author: PR 작성자
+        - created_at_date: PR 생성 날짜 (YYYY-MM-DD 형식)
+        - pr_size: PR 크기 (추가+삭제된 라인 수)
+        - pr_duration_hours: PR 처리 시간
+        - is_merged: PR 병합 여부
+    - output_file: 출력 파일 경로 (선택 사항)
+    - internal_contributors: 내부 기여자 목록. 환경 변수 INTERNAL_CONTRIBUTORS에서 설정 가능
+    
+    출력:
+    - 콘솔: 전체 PR 수, 기여자 유형별 PR 수와 비율, 상위 기여자 목록
+    - 파일: 4개의 서브플롯이 포함된 차트 이미지 (output_file이 지정된 경우)
+    """
+    if internal_contributors is None:
+        internal_contributors = []
+    
+    # 기여자(PR 작성자) 분류
+    df['contributor_type'] = df['pr_author'].apply(
+        lambda x: '내부 기여자' if x in internal_contributors else '외부 기여자'
+    )
+    
+    # 기여자 유형별 PR 수 계산
+    contributor_counts = df['contributor_type'].value_counts()
+    
+    # 기여자 유형별 PR 비율 계산
+    contributor_percentages = (contributor_counts / contributor_counts.sum() * 100).round(1)
+    
+    # 그래프 설정
+    plt.figure(figsize=(12, 10))
+    
+    # 1. 파이 차트 (전체 비율)
+    plt.subplot(2, 2, 1)
+    plt.pie(
+        contributor_counts, 
+        labels=[f"{label}\n({count}건, {contributor_percentages[i]}%)" 
+                for i, (label, count) in enumerate(contributor_counts.items())],
+        autopct='%1.1f%%',
+        startangle=90,
+        colors=['#ff9999', '#66b3ff']
+    )
+    plt.title('내부/외부 기여자 PR 비율')
+    
+    # 2. 시간에 따른 내부/외부 기여자 PR 추이 (일별)
+    plt.subplot(2, 2, 2)
+    
+    # 날짜 데이터 준비
+    df['created_date'] = pd.to_datetime(df['created_at_date'])
+    
+    # 일별 데이터 집계
+    daily_contrib = df.groupby(['created_date', 'contributor_type']).size().unstack().fillna(0)
+    
+    # 날짜 인덱스를 YYYY-MM-DD 형식으로 변경
+    daily_contrib.index = daily_contrib.index.strftime('%Y-%m-%d')
+    
+    # 그래프 그리기
+    daily_contrib.plot(kind='bar', stacked=True, ax=plt.gca(), color=['#ff9999', '#66b3ff'])
+    plt.title('일별 내부/외부 기여자 PR 추이')
+    plt.xlabel('날짜')
+    plt.ylabel('PR 수')
+    plt.xticks(rotation=45, ha='right')
+    plt.legend(title='기여자 유형')
+    
+    # x축 레이블 간격 조정 (날짜가 많을 경우 가독성을 위해)
+    ax = plt.gca()
+    if len(daily_contrib) > 20:
+        # 표시할 x축 레이블 개수를 20개로 제한
+        step = len(daily_contrib) // 20 + 1
+        for idx, label in enumerate(ax.xaxis.get_ticklabels()):
+            if idx % step != 0:
+                label.set_visible(False)
+    
+    # 3. 기여자 유형별 PR 크기 분포
+    plt.subplot(2, 2, 3)
+    sns.boxplot(x='contributor_type', y='pr_size', data=df, palette=['#ff9999', '#66b3ff'])
+    plt.title('기여자 유형별 PR 크기 분포')
+    plt.xlabel('기여자 유형')
+    plt.ylabel('PR 크기 (추가+삭제 라인 수)')
+    
+    # 4. 기여자 유형별 PR 처리 시간 분포
+    plt.subplot(2, 2, 4)
+    # 병합된 PR만 선택
+    merged_prs = df[df['is_merged'] == True]
+    if not merged_prs.empty:
+        sns.boxplot(x='contributor_type', y='pr_duration_hours', data=merged_prs, palette=['#ff9999', '#66b3ff'])
+        plt.title('기여자 유형별 PR 처리 시간 분포 (병합된 PR)')
+        plt.xlabel('기여자 유형')
+        plt.ylabel('PR 처리 시간 (시간)')
+    else:
+        plt.text(0.5, 0.5, '병합된 PR 데이터가 없습니다', ha='center', va='center')
+        plt.title('기여자 유형별 PR 처리 시간 분포')
+    
+    plt.tight_layout()
+    
+    # 파일로 저장
+    if output_file:
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        print(f"기여자 분포 차트가 저장되었습니다: {output_file}")
+    
+    plt.close()
+    
+    # 상세 통계 출력
+    print("\n===== 내부/외부 기여자 분석 =====")
+    print(f"전체 PR 수: {len(df)}")
+    for contrib_type, count in contributor_counts.items():
+        print(f"{contrib_type}: {count}건 ({contributor_percentages[contrib_type]}%)")
+    
+    # 기여자별 PR 수 상위 10명
+    top_contributors = df['pr_author'].value_counts().head(10)
+    print("\n상위 기여자 (PR 수):")
+    for author, count in top_contributors.items():
+        contrib_type = '내부' if author in internal_contributors else '외부'
+        print(f"{author} ({contrib_type}): {count}건")
+
 def main():
     parser = argparse.ArgumentParser(description='GitHub PR 데이터 시각화')
     parser.add_argument('input_file', help='PR 지표가 포함된 CSV 파일')
     parser.add_argument('--output-dir', default='charts', help='차트 출력 디렉토리')
+    parser.add_argument('--internal-contributors', nargs='+', default=None, 
+                        help='내부 기여자 목록 (공백으로 구분). 지정하지 않으면 환경 변수 INTERNAL_CONTRIBUTORS 사용')
     
     args = parser.parse_args()
+    
+    # 내부 기여자 목록 설정
+    internal_contributors = args.internal_contributors
+    if internal_contributors is None:
+        # 환경 변수에서 내부 기여자 목록 가져오기
+        env_contributors = os.environ.get('INTERNAL_CONTRIBUTORS', '')
+        if env_contributors:
+            internal_contributors = [c.strip() for c in env_contributors.split(',')]
+        else:
+            internal_contributors = []
     
     # 출력 디렉토리가 없으면 생성
     if not os.path.exists(args.output_dir):
@@ -1605,6 +1746,16 @@ def main():
     except Exception as e:
         print(f"스레드 기반 분석 시각화 중 오류 발생: {e}")
         print("스레드 분석 차트가 생성되지 않았을 수 있습니다.")
+    
+    # 내부/외부 기여자 분석 차트 생성
+    print("내부/외부 기여자 분석 차트 생성 중...")
+    try:
+        plot_contributor_distribution(df,
+            os.path.join(args.output_dir, "contributor_distribution.png"),
+            internal_contributors=internal_contributors)
+    except Exception as e:
+        print(f"내부/외부 기여자 분석 시각화 중 오류 발생: {e}")
+        print("기여자 분석 차트가 생성되지 않았을 수 있습니다.")
     
     print(f"모든 차트가 {args.output_dir} 디렉토리에 저장되었습니다.")
 
