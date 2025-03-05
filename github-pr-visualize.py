@@ -7,9 +7,6 @@ import argparse
 import os
 import platform
 import matplotlib.font_manager as fm
-from datetime import datetime
-import networkx as nx
-from matplotlib.colors import Normalize
 
 # 한글 폰트 설정
 def set_korean_font():
@@ -1594,9 +1591,6 @@ def main():
             
             plot_review_category_correlation(df,
                 os.path.join(args.output_dir, "review_category_correlation.png"))
-            
-            plot_review_category_by_outcome(df,
-                os.path.join(args.output_dir, "review_category_by_outcome.png"))
             
             plot_review_category_lifecycle_impact(df,
                 os.path.join(args.output_dir, "review_category_lifecycle_impact.png"))
